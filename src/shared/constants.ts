@@ -218,3 +218,15 @@ export const PROVIDER_PERMISSION_PREFERENCE_KEYS: Record<LLMProvider, UserPrefer
   codex: 'codexPermissions',
   opencode: 'opencodePermissions',
 };
+
+
+// ---------------------------
+
+//----------------- SESSION DRAG AND DROP ------------
+
+/**
+ * `DataTransfer` type a sidebar session row sets when dragged. The workspace
+ * split view only opens its drop zones for drags carrying this type, so file
+ * and text drags keep reaching the chat composer.
+ */
+export const SESSION_DRAG_MIME = 'application/x-cloudcli-session';

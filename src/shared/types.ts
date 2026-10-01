@@ -118,6 +118,52 @@ export type Project = {
   [key: string]: unknown;
 };
 
+/**
+ * What a sidebar session row carries while it is dragged into the workspace's
+ * split view. Project-list rows send the session and its project (without the
+ * project's `sessions` list, to keep the payload small); recent-conversation
+ * rows only know the id, so the split view resolves the rest on drop.
+ */
+export type SessionDragPayload = {
+  sessionId: string;
+  session?: ProjectSession;
+  project?: Project;
+};
+
+/** Named chat split arrangements: single = one chat, columns = left | right, rows = top / bottom, grid = four corners. */
+export type SplitLayoutMode = 'single' | 'columns' | 'rows' | 'grid';
+
+/** The workspace tabs each split-view pane switches on its own; the rest (tasks, browser, plugins) stay workspace-wide. */
+export type SplitPaneTab = Extract<AppTab, 'chat' | 'shell' | 'files' | 'git'>;
+
+/**
+ * Where a session dragged into the split view lands: a set of grid cells
+ * (0 = top left, 1 = top right, 2 = bottom left, 3 = bottom right) forming a
+ * half or a corner, or on top of an existing pane, replacing its chat.
+ */
+export type SplitDropTarget =
+  | { kind: 'cells'; cells: number[] }
+  | { kind: 'pane'; paneId: string };
+
+/**
+ * One chat pane of the workspace split view, with the session and project it
+ * should render already resolved. Produced by the project-workspace split
+ * layout hook and rendered by its split view.
+ */
+export type ResolvedSplitPane = {
+  /** Stable React key, so a pane keeps its mounted chat when panes are reordered. */
+  paneId: string;
+  session: ProjectSession | null;
+  project: Project | null;
+  /** Grid cells the pane covers (0 = top left … 3 = bottom right); always a rectangle. */
+  cells: number[];
+  /** Which of the pane's own tabs (chat, shell, files, source control) it shows. */
+  tab: SplitPaneTab;
+  isFocused: boolean;
+  /** Per-pane New Session counter: only the focused pane resets on New Session. */
+  newSessionTrigger: number;
+};
+
 /** Progress payload streamed while the backend enumerates projects, used to drive the sidebar loading bar. */
 export type LoadingProgress = {
   kind?: 'loading_progress';

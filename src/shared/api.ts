@@ -160,6 +160,8 @@ export const api = {
   // Auth endpoints (no token required)
   auth: {
     status: () => fetch('/api/auth/status'),
+    // Credential-free session, only offered when a login proxy (Authelia) guards the server.
+    externalSession: () => fetch('/api/auth/external-session', { method: 'POST' }),
     login: (username: string, password: string) => fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -378,6 +380,11 @@ export const api = {
     capabilities: () => get('/api/providers/capabilities'),
     authStatus: (provider: string) =>
       get(`/api/providers/${encodeURIComponent(provider)}/auth/status`),
+    // Session/weekly/per-model plan limits of the logged-in Claude subscription.
+    claudePlanUsage: (refresh = false) =>
+      get(`/api/providers/claude/plan-usage${query({ refresh })}`),
+    // ChatGPT plan limits Codex last reported; `connected: false` when Codex has no login.
+    codexPlanUsage: () => get('/api/providers/codex/plan-usage'),
 
     models: (provider: string) => get(`/api/providers/${provider}/models`),
     createModel: (provider: string, input: unknown) =>

@@ -1,5 +1,7 @@
 import express, { type Request, type Response } from 'express';
 
+import { claudePlanUsageService } from '@/modules/providers/services/claude-plan-usage.service.js';
+import { codexPlanUsageService } from '@/modules/providers/services/codex-plan-usage.service.js';
 import { providerAuthService } from '@/modules/providers/services/provider-auth.service.js';
 import { providerCapabilitiesService } from '@/modules/providers/services/provider-capabilities.service.js';
 import { providerMcpService } from '@/modules/providers/services/mcp.service.js';
@@ -532,6 +534,23 @@ const parseCustomProviderModelPayload = (payload: unknown): CustomProviderModelI
 
   return { model, id };
 };
+
+router.get(
+  '/claude/plan-usage',
+  asyncHandler(async (req: Request, res: Response) => {
+    const forceRefresh = parseOptionalBooleanQuery(req.query.refresh, 'refresh') ?? false;
+    const usage = await claudePlanUsageService.getPlanUsage({ forceRefresh });
+    res.json(createApiSuccessResponse(usage));
+  }),
+);
+
+router.get(
+  '/codex/plan-usage',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const usage = await codexPlanUsageService.getPlanUsage();
+    res.json(createApiSuccessResponse(usage));
+  }),
+);
 
 router.get(
   '/:provider/auth/status',
