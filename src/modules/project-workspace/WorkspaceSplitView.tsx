@@ -3,7 +3,8 @@ import type { CSSProperties, DragEvent, ReactNode } from 'react';
 import { Folder, GitBranch, MessageSquare, MessageSquarePlus, Terminal, X } from 'lucide-react';
 
 import { LLMProviderLogo } from '@/shared/ui';
-import { cn } from '@/shared/utils';
+import { cn, withAlpha } from '@/shared/utils';
+import { useProjectColors } from '@/shared/hooks/useProjectColors';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { ResolvedSplitPane, SessionDragPayload, SplitDropTarget, SplitPaneTab } from '@/shared/types';
 
@@ -100,6 +101,7 @@ export default function WorkspaceSplitView({
   onPaneTabChange,
   renderPane,
 }: WorkspaceSplitViewProps) {
+  const { getProjectColor } = useProjectColors();
   const containerRef = useRef<HTMLDivElement>(null);
   // Where the dragged session would land; null when no session drag is over the view.
   const [dropTarget, setDropTarget] = useState<SplitDropTarget | null>(null);
@@ -202,13 +204,22 @@ export default function WorkspaceSplitView({
       <div className={cn('grid h-full grid-cols-2 grid-rows-2', isSplit && 'gap-px bg-border/70')}>
         {panes.map((pane) => {
           const hasChat = Boolean(pane.session) || pane.isFocused;
+          // The focused pane is outlined in its project's colour, so in a split
+          // it is clear which project the header, tabs and URL now follow.
+          const projectColor = pane.project
+            ? getProjectColor(pane.project.projectId, pane.project.displayName)
+            : null;
+          const isHighlighted = isSplit && pane.isFocused && projectColor;
           return (
             <div
               key={pane.paneId}
-              style={gridPlacement(pane.cells)}
+              style={{
+                ...gridPlacement(pane.cells),
+                ...(isHighlighted ? { boxShadow: `inset 0 0 0 1px ${withAlpha(projectColor, 0.6)}` } : {}),
+              }}
               className={cn(
-                'flex min-h-0 min-w-0 flex-col overflow-hidden bg-background',
-                isSplit && pane.isFocused && 'ring-1 ring-inset ring-primary/40',
+                'relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background',
+                isSplit && pane.isFocused && !projectColor && 'ring-1 ring-inset ring-primary/40',
               )}
               onPointerDownCapture={(event) => {
                 // The close button must not focus the pane it is closing.
@@ -220,8 +231,13 @@ export default function WorkspaceSplitView({
                 <div
                   className={cn(
                     'flex h-8 flex-shrink-0 items-center gap-2 border-b border-border/60 px-2.5 text-xs',
-                    pane.isFocused ? 'bg-primary/5 text-foreground' : 'bg-muted/30 text-muted-foreground',
+                    pane.isFocused ? 'text-foreground' : 'bg-muted/30 text-muted-foreground',
+                    pane.isFocused && !projectColor && 'bg-primary/5',
                   )}
+                  style={isHighlighted ? {
+                    backgroundColor: withAlpha(projectColor, 0.1),
+                    boxShadow: `inset 0 2px 0 ${projectColor}`,
+                  } : undefined}
                 >
                   {pane.session && (
                     <LLMProviderLogo
@@ -232,9 +248,14 @@ export default function WorkspaceSplitView({
                   <span className="min-w-0 flex-1 truncate font-medium" title={paneTitle(pane)}>
                     {hasChat ? paneTitle(pane) : 'Empty'}
                   </span>
-                  {pane.project?.displayName && (
-                    <span className="hidden max-w-[30%] truncate text-muted-foreground/80 xl:inline">
-                      {pane.project.displayName}
+                  {pane.project?.displayName && projectColor && (
+                    <span className="flex min-w-0 max-w-[30%] flex-shrink-0 items-center gap-1.5" title={pane.project.displayName}>
+                      <span
+                        className="h-2 w-2 flex-shrink-0 rounded-full"
+                        style={{ backgroundColor: projectColor, boxShadow: `0 0 0 2px ${withAlpha(projectColor, 0.2)}` }}
+                        aria-hidden
+                      />
+                      <span className="hidden truncate text-muted-foreground/80 xl:inline">{pane.project.displayName}</span>
                     </span>
                   )}
                   {hasChat && pane.project && (

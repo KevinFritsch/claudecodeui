@@ -2,8 +2,7 @@ import { CheckSquare, Plus, Trash2 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { Button } from '@/shared/ui';
-import { cn } from '@/shared/utils';
-import { withAlpha } from '@/modules/sidebar/utils/projectColor';
+import { cn, withAlpha } from '@/shared/utils';
 import type { LLMProvider, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection, SessionDeleteOptions } from '@/shared/types';
 import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';

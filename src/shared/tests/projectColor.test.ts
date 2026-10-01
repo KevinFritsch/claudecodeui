@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
 
-import { colorFromText, isHexColor, withAlpha } from '@/modules/sidebar/utils/projectColor';
+import { colorFromText, isHexColor, withAlpha } from '@/shared/utils';
 
 test('a project name always maps to the same #rrggbb colour', () => {
   assert.equal(colorFromText('GolfN'), colorFromText('GolfN'));

@@ -3,13 +3,12 @@ import type { DragEvent, MouseEvent } from 'react';
 import type { TFunction } from 'i18next';
 
 import { Button, LLMProviderLogo, Tooltip } from '@/shared/ui';
-import { cn } from '@/shared/utils';
+import { cn, withAlpha } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { ProjectSession, RecentConversationListItem, SessionDragPayload, SessionRowActions } from '@/shared/types';
 import { formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
-import { useProjectColors } from '@/modules/sidebar/hooks/useProjectColors';
-import { withAlpha } from '@/modules/sidebar/utils/projectColor';
+import { useProjectColors } from '@/shared/hooks/useProjectColors';
 
 type SidebarRecentConversationsProps = {
   conversations: RecentConversationListItem[];

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import { Check, RotateCcw } from 'lucide-react';
 
-import { cn } from '@/shared/utils';
-import { colorFromText, isHexColor, withAlpha } from '@/modules/sidebar/utils/projectColor';
+import { cn, colorFromText, isHexColor, withAlpha } from '@/shared/utils';
 
 /** Hand-picked colours that sit well on the dark and light sidebar. */
 const COLOR_SWATCHES = [

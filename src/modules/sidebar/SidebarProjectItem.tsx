@@ -9,7 +9,7 @@ import { getTaskIndicatorStatus } from '@/modules/sidebar/utils/sidebarProjectFo
 import TaskIndicator from '@/modules/sidebar/TaskIndicator';
 import SidebarProjectSessions from '@/modules/sidebar/SidebarProjectSessions';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
-import { useProjectColors } from '@/modules/sidebar/hooks/useProjectColors';
+import { useProjectColors } from '@/shared/hooks/useProjectColors';
 import { ProjectColorPicker } from '@/modules/sidebar/ProjectColorPicker';
 
 type SidebarProjectItemProps = {

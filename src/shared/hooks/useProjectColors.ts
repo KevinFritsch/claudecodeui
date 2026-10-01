@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { readUserPreference, subscribeToUserPreferences, writeUserPreference } from '@/shared/userSettings';
-import { colorFromText, isHexColor } from '@/modules/sidebar/utils/projectColor';
+import { colorFromText, isHexColor } from '@/shared/utils';
 
 const NO_OVERRIDES: Record<string, string> = {};
 
@@ -11,7 +11,8 @@ const readOverrides = (): Record<string, string> => {
 };
 
 /**
- * Each project's colour: the one the user picked (a synced user preference,
+ * Used by the sidebar (project rows, conversations) and the workspace split
+ * view. Each project's colour: the one the user picked (a synced user preference,
  * keyed by projectId) or, by default, one derived from the project's name.
  */
 export function useProjectColors() {

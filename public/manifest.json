@@ -1,11 +1,11 @@
 {
-  "name": "CloudCLI UI",
-  "short_name": "CloudCLI UI",
-  "description": "CloudCLI UI web application",
+  "name": "Kvn AI",
+  "short_name": "Kvn AI",
+  "description": "Kvn AI workspace",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#0b1220",
+  "theme_color": "#1d4ed8",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
