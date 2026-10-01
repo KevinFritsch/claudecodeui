@@ -26,6 +26,24 @@ const ULTRACODE_EFFORT_OPTION = {
   description: 'Highest effort plus standing workflow orchestration.',
 };
 
+/** Effort levels every current Fable, Opus and Sonnet model accepts. */
+const FULL_EFFORT = {
+  default: 'high',
+  values: [
+    { value: 'low' },
+    { value: 'medium' },
+    { value: 'high' },
+    { value: 'xhigh' },
+    { value: 'max' },
+    ULTRACODE_EFFORT_OPTION,
+  ],
+};
+
+/**
+ * Exact model versions rather than the CLI's floating aliases (`opus`,
+ * `fable`), so the picker says which model a turn runs on and matches the id
+ * Claude Code records in the transcript (`claude-opus-5-5`).
+ */
 export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
   OPTIONS: [
     {
@@ -43,121 +61,39 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
       },
     },
     {
-      value: 'best',
-      label: 'Best available',
-      description: 'Use Fable 5 when available, otherwise the latest Opus model.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
-    },
-    {
-      value: 'fable',
-      label: 'Fable 5',
+      value: 'claude-fable-5-1',
+      label: 'Fable 5.1',
       description: 'Most capable Claude model for the hardest, longest-running tasks.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
+      effort: FULL_EFFORT,
     },
     {
-      value: 'sonnet',
-      label: 'Sonnet',
-      description: 'Latest Sonnet model for everyday coding tasks.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
+      value: 'claude-opus-5-5',
+      label: 'Opus 5.5',
+      description: 'Complex reasoning and coding.',
+      effort: FULL_EFFORT,
     },
     {
-      value: 'sonnet[1m]',
-      label: 'Sonnet (1M context)',
-      description: 'Latest Sonnet model with a 1M context window.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
+      value: 'claude-opus-5-5[1m]',
+      label: 'Opus 5.5 (1M context)',
+      description: 'Opus 5.5 with a 1M context window.',
+      effort: FULL_EFFORT,
     },
     {
-      value: 'opus',
-      label: 'Opus',
-      description: 'Latest Opus model for complex reasoning and coding tasks.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
+      value: 'claude-sonnet-5-5',
+      label: 'Sonnet 5.5',
+      description: 'Everyday coding tasks.',
+      effort: FULL_EFFORT,
     },
     {
-      value: 'opus[1m]',
-      label: 'Opus (1M context)',
-      description: 'Latest Opus model with a 1M context window.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
+      value: 'claude-sonnet-5-5[1m]',
+      label: 'Sonnet 5.5 (1M context)',
+      description: 'Sonnet 5.5 with a 1M context window.',
+      effort: FULL_EFFORT,
     },
     {
-      value: 'haiku',
-      label: 'Haiku',
-      description: 'Fast and efficient Claude model for simple tasks.',
-    },
-    {
-      value: 'opusplan',
-      label: 'Opus Plan',
-      description: 'Use Opus while planning, then switch to Sonnet for execution.',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-          ULTRACODE_EFFORT_OPTION,
-        ],
-      },
+      value: 'claude-haiku-4-5-20251001',
+      label: 'Haiku 4.5',
+      description: 'Fast and efficient model for simple tasks.',
     },
   ],
   DEFAULT: 'default',
