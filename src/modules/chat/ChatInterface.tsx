@@ -329,6 +329,32 @@ function ChatInterface({
   // Only the focused split-view pane receives text from the quick settings panel.
   usePaletteOpsRegister({ insertComposerText: isFocusedPane ? insertComposerText : undefined });
 
+  // Opening a session (sidebar click, New Session, focusing a split pane)
+  // puts the caret in the composer so typing can start right away. Desktop
+  // only: on touch screens focusing would pop the keyboard over the chat.
+  // Only a change of session triggers it, so clicking into a split pane to
+  // select transcript text does not pull the caret away.
+  const viewedSessionId = selectedSession?.id ?? null;
+  const lastAutoFocusedSessionRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!isActive || !isFocusedPane) return undefined;
+    if (lastAutoFocusedSessionRef.current === viewedSessionId) return undefined;
+    lastAutoFocusedSessionRef.current = viewedSessionId;
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      // Leave focus alone if the user is already typing into another field.
+      const active = document.activeElement as HTMLElement | null;
+      const isTypingElsewhere = Boolean(active && active !== textarea
+        && (active.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)));
+      if (!textarea || isTypingElsewhere) return;
+      textarea.focus({ preventScroll: true });
+      const caretPosition = textarea.value.length;
+      textarea.setSelectionRange(caretPosition, caretPosition);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isActive, isFocusedPane, textareaRef, viewedSessionId]);
+
   useEffect(() => {
     if (!canAbortSession || !isFocusedPane) {
       return;
