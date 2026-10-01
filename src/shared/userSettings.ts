@@ -28,6 +28,8 @@ export type UserPreferences = {
   codeEditorSettings: unknown;
   uiPreferences: unknown;
   selectedProvider: string;
+  /** Colours the user picked for projects, keyed by projectId; unset projects use a colour derived from their name. */
+  projectColors: Record<string, string>;
 };
 
 export type UserPreferenceKey = keyof UserPreferences;
@@ -67,6 +69,8 @@ const LEGACY_STORAGE_KEYS: Record<UserPreferenceKey, string> = {
   codeEditorSettings: '',
   uiPreferences: 'uiPreferences',
   selectedProvider: 'selected-provider',
+  // New with project colours; nothing to migrate.
+  projectColors: '',
 };
 
 const PREFERENCE_KEYS = Object.keys(LEGACY_STORAGE_KEYS) as UserPreferenceKey[];

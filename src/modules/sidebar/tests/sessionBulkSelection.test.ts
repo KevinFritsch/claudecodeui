@@ -115,6 +115,7 @@ const renderSessions = (overrides: ListOverrides = {}) =>
       onDeleteSession: noop,
       onLoadMoreSessions: noop,
       onNewSession: noop,
+      projectColor: "#60a5fa",
       selectedSessionIds: null,
       onSetSessionSelection: noop,
       onToggleSessionSelected: noop,

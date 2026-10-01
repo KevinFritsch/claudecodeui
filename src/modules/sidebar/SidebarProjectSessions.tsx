@@ -3,6 +3,7 @@ import type { TFunction } from 'i18next';
 
 import { Button } from '@/shared/ui';
 import { cn } from '@/shared/utils';
+import { withAlpha } from '@/modules/sidebar/utils/projectColor';
 import type { LLMProvider, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection } from '@/shared/types';
 import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
@@ -32,6 +33,8 @@ type SidebarProjectSessionsProps = {
   onForkSession?: (session: SessionWithProvider) => void;
   onLoadMoreSessions: (projectId: string) => void;
   onNewSession: (project: Project) => void;
+  /** The project's colour, used for the session tree's guide line and the New session icon. */
+  projectColor: string;
   /** The sessions ticked here, or null when this project's list is not in selection mode. */
   selectedSessionIds: ReadonlySet<string> | null;
   onSetSessionSelection: (selection: SidebarSessionSelection) => void;
@@ -84,6 +87,7 @@ export default function SidebarProjectSessions({
   onForkSession,
   onLoadMoreSessions,
   onNewSession,
+  projectColor,
   selectedSessionIds,
   onSetSessionSelection,
   onToggleSessionSelected,
@@ -123,87 +127,80 @@ export default function SidebarProjectSessions({
       : t('sessions.selectAll');
 
   return (
-    <div className="ml-3 space-y-1 border-l border-border pl-3">
-      {isCompact ? (
-        <div className="px-3 pb-1 pt-1">
+    <div className="ml-3 space-y-1 border-l pl-3" style={{ borderColor: withAlpha(projectColor, 0.35) }}>
+      {isSelecting ? (
+        <div className={cn('space-y-1', isCompact && 'px-3')}>
+          {/* Wraps rather than clips: at the narrowest sidebar width a long
+              translated "Select all loaded" leaves no room for Cancel. */}
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                onSetSessionSelection({
+                  projectId: project.projectId,
+                  sessionIds: new Set(allLoadedSelected ? [] : selectableSessionIds),
+                })
+              }
+              disabled={selectableSessionIds.length === 0}
+            >
+              {selectAllLabel}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={onCancelSessionSelection}
+            >
+              {t('actions.cancel')}
+            </Button>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-8 w-full justify-center gap-2 bg-red-600 text-xs font-medium text-white hover:bg-red-700"
+            onClick={() => onDeleteSelectedSessions(effectiveSelectedIds)}
+            disabled={effectiveSelectedIds.length === 0}
+          >
+            <Trash2 className="h-3 w-3" />
+            {t('sessions.deleteSelected', { count: effectiveSelectedIds.length })}
+          </Button>
+        </div>
+      ) : (
+        // One compact row: New session on the left, Select on the right.
+        <div className={cn('flex items-center gap-1', isCompact && 'px-3')}>
           <button
-            className="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-primary text-xs font-medium text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.98]"
+            type="button"
+            className={cn(
+              'group/new flex flex-1 items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground',
+              isCompact ? 'h-9' : 'h-7',
+            )}
             onClick={() => {
-              onProjectSelect(project);
+              if (isCompact) onProjectSelect(project);
               onNewSession(project);
             }}
           >
-            <Plus className="h-3 w-3" />
+            <span
+              className="flex h-5 w-5 items-center justify-center rounded-md transition-colors"
+              style={{ backgroundColor: withAlpha(projectColor, 0.16), color: projectColor }}
+            >
+              <Plus className="h-3 w-3" strokeWidth={2.5} />
+            </span>
             {t('sessions.newSession')}
           </button>
-        </div>
-      ) : (
-        <Button
-          variant="default"
-          size="sm"
-          className="flex h-8 w-full justify-start gap-2 bg-primary text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          onClick={() => onNewSession(project)}
-        >
-          <Plus className="h-3 w-3" />
-          {t('sessions.newSession')}
-        </Button>
-      )}
-
-      {(isSelecting || (initialSessionsLoaded && selectableSessionIds.length > 0)) && (
-        <div className={cn('space-y-1', isCompact && 'px-3')}>
-          {isSelecting ? (
-            <>
-              {/* Wraps rather than clips: at the narrowest sidebar width a long
-                  translated "Select all loaded" leaves no room for Cancel. */}
-              <div className="flex flex-wrap items-center justify-between gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    onSetSessionSelection({
-                      projectId: project.projectId,
-                      sessionIds: new Set(allLoadedSelected ? [] : selectableSessionIds),
-                    })
-                  }
-                  disabled={selectableSessionIds.length === 0}
-                >
-                  {selectAllLabel}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={onCancelSessionSelection}
-                >
-                  {t('actions.cancel')}
-                </Button>
-              </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="h-8 w-full justify-center gap-2 bg-red-600 text-xs font-medium text-white hover:bg-red-700"
-                onClick={() => onDeleteSelectedSessions(effectiveSelectedIds)}
-                disabled={effectiveSelectedIds.length === 0}
-              >
-                <Trash2 className="h-3 w-3" />
-                {t('sessions.deleteSelected', { count: effectiveSelectedIds.length })}
-              </Button>
-            </>
-          ) : (
-            <div className="flex justify-end">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() =>
-                  onSetSessionSelection({ projectId: project.projectId, sessionIds: new Set() })
-                }
-              >
-                <CheckSquare className="h-3 w-3" />
-                {t('sessions.select')}
-              </Button>
-            </div>
+          {initialSessionsLoaded && selectableSessionIds.length > 0 && (
+            <button
+              type="button"
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground',
+                isCompact ? 'h-9' : 'h-7',
+              )}
+              onClick={() => onSetSessionSelection({ projectId: project.projectId, sessionIds: new Set() })}
+            >
+              <CheckSquare className="h-3 w-3" />
+              {t('sessions.select')}
+            </button>
           )}
         </div>
       )}

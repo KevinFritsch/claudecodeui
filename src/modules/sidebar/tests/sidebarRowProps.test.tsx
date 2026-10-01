@@ -250,6 +250,7 @@ const sessionsProps = (
   onDeleteSession: noop,
   onLoadMoreSessions: noop,
   onNewSession: noop,
+  projectColor: "#60a5fa",
   selectedSessionIds,
   onSetSessionSelection: noop,
   onToggleSessionSelected: noop,

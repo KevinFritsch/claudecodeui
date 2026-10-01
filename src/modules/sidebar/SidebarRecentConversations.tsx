@@ -8,6 +8,8 @@ import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { ProjectSession, RecentConversationListItem, SessionDragPayload, SessionRowActions } from '@/shared/types';
 import { formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
+import { useProjectColors } from '@/modules/sidebar/hooks/useProjectColors';
+import { withAlpha } from '@/modules/sidebar/utils/projectColor';
 
 type SidebarRecentConversationsProps = {
   conversations: RecentConversationListItem[];
@@ -65,6 +67,7 @@ export default function SidebarRecentConversations({
   onRetry,
   t,
 }: SidebarRecentConversationsProps) {
+  const { getProjectColor } = useProjectColors();
   if (isLoading && conversations.length === 0) {
     return <RecentConversationSkeleton />;
   }
@@ -186,6 +189,14 @@ export default function SidebarRecentConversations({
                     {conversation.sessionTitle}
                   </span>
                   <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-3 text-muted-foreground">
+                    <span
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: getProjectColor(conversation.projectId, conversation.projectDisplayName ?? ''),
+                        boxShadow: `0 0 0 2px ${withAlpha(getProjectColor(conversation.projectId, conversation.projectDisplayName ?? ''), 0.2)}`,
+                      }}
+                      aria-hidden
+                    />
                     <span className="truncate">{conversation.projectDisplayName}</span>
                     {isProcessing ? (
                       <>
