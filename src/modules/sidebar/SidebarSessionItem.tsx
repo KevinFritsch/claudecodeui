@@ -6,7 +6,7 @@ import type { TFunction } from 'i18next';
 import { Badge, Dialog, DialogContent, DialogTitle, LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
 import { cn } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
-import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider } from '@/shared/types';
+import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
@@ -30,7 +30,7 @@ type SidebarSessionItemProps = {
   onSaveEditingSession: (projectName: string, sessionId: string, summary: string, provider: LLMProvider) => void;
   onProjectSelect: (project: Project) => void;
   onSessionSelect: (session: SessionWithProvider, projectName: string) => void;
-  onDeleteSession: (sessionId: string, sessionTitle: string) => void;
+  onDeleteSession: (sessionId: string, sessionTitle: string, options?: SessionDeleteOptions) => void;
   /** Branches this session into an independent one; absent when its provider cannot. */
   onForkSession?: (session: SessionWithProvider) => void;
   /** This project's list is in bulk-selection mode: the row acts as a checkbox and hides its options. */
@@ -242,6 +242,21 @@ function SidebarSessionItem({
               </div>
             </div>
 
+            {!isSelecting && !isProcessing && (
+              <button
+                type="button"
+                aria-label={`Archive ${sessionView.sessionName}`}
+                title="Archive session"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500 active:scale-95"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteSession(session.id, sessionView.sessionName, { immediate: true });
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+
             {!isSelecting && (
               <button
                 type="button"
@@ -403,7 +418,8 @@ function SidebarSessionItem({
           className={cn(
             buttonVariants({ variant: 'ghost' }),
             'h-auto w-full justify-start rounded-md border bg-card p-2 text-left font-normal transition-all duration-150',
-            isSelecting ? 'pr-2' : 'pr-11',
+            // Room for ⋯, and on hover for the bin next to it.
+            isSelecting ? 'pr-2' : 'pr-11 group-hover:pr-[4.5rem]',
             isSelected ? 'border-primary/20 bg-primary/5' : 'border-border/30',
             !isSelected && isProcessing
               ? 'border-border/60 bg-muted/20 hover:bg-muted/25'

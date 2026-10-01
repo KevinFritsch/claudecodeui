@@ -4,7 +4,7 @@ import type { TFunction } from 'i18next';
 
 import { ActionMenu } from '@/shared/ui';
 import { cn } from '@/shared/utils';
-import type { LLMProvider } from '@/shared/types';
+import type { LLMProvider, SessionDeleteOptions } from '@/shared/types';
 import { useSessionForkingProviders } from '@/shared/hooks/useProviderCapabilities';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
 import { PROVIDER_LABELS } from '@/modules/sidebar/utils/sidebarProjectFormatting';
@@ -26,7 +26,7 @@ type SessionOptionsProps = {
   onStartEditingSession: (projectId: string, sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectId: string, sessionId: string, summary: string, provider: LLMProvider) => void;
-  onDeleteSession: (sessionId: string, sessionTitle: string) => void;
+  onDeleteSession: (sessionId: string, sessionTitle: string, options?: SessionDeleteOptions) => void;
   /** Bound by the caller, which owns the session object the fork needs. */
   onFork?: () => void;
   /** Withheld where the row has nowhere to send a delete. */
@@ -140,6 +140,23 @@ export default function SessionOptions({
           </button>
         </>
       ) : (
+        <>
+        {/* One-click archive; shown on hover (always on touch) so idle rows stay calm. */}
+        {canDelete && !isProcessing && (
+          <button
+            type="button"
+            aria-label={`Archive ${sessionName}`}
+            title="Archive session (restore or delete it from the Archive tab)"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onDeleteSession(sessionId, sessionName, { immediate: true });
+            }}
+            className="touch:opacity-100 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all duration-150 hover:bg-red-500/10 hover:text-red-500 focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
         <ActionMenu
           label="Session options"
           ariaLabel={`Session options for ${sessionName}`}
@@ -192,6 +209,7 @@ export default function SessionOptions({
             }] : []),
           ]}
         />
+        </>
       )}
     </div>
   );

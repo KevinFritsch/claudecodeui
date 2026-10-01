@@ -586,3 +586,34 @@ test('an empty selection opens no confirmation', () => {
 
   assert.equal(result.current.pendingDeletion, null);
 });
+
+test('opening a project leaves the other open projects open', () => {
+  const { result } = renderController();
+
+  act(() => {
+    result.current.toggleProject('project-1');
+  });
+  act(() => {
+    result.current.toggleProject('project-2');
+  });
+  assert.equal(result.current.isProjectExpanded('project-1'), true, 'the first stays open');
+  assert.equal(result.current.isProjectExpanded('project-2'), true);
+
+  act(() => {
+    result.current.toggleProject('project-1');
+  });
+  assert.equal(result.current.isProjectExpanded('project-1'), false, 'and each still closes on its own');
+  assert.equal(result.current.isProjectExpanded('project-2'), true);
+});
+
+test('the bin archives a session at once, without the archive-or-delete dialog', async () => {
+  const onSessionDelete = vi.fn();
+  const { result } = renderController(onSessionDelete);
+
+  await act(async () => {
+    result.current.showDeleteSessionConfirmation('s1', 'First', { immediate: true });
+  });
+  assert.equal(result.current.pendingDeletion, null);
+  await vi.waitFor(() => assert.equal(onSessionDelete.mock.calls.length, 1));
+  assert.deepEqual(onSessionDelete.mock.calls[0], ['s1']);
+});

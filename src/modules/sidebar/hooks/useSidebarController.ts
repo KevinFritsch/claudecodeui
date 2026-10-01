@@ -556,9 +556,11 @@ export function useSidebarController({
         return;
       }
 
+      // Each project opens and closes on its own; opening one leaves the
+      // others as they were.
       setExpandedProjects((prev) => {
-        const next = new Set<string>();
-        if (!prev.has(projectId)) {
+        const next = new Set(prev);
+        if (!next.delete(projectId)) {
           next.add(projectId);
         }
         return next;
@@ -844,30 +846,9 @@ export function useSidebarController({
     [paletteOps],
   );
 
-  const showDeleteSessionConfirmation = useCallback(
-    (
-      sessionId: string,
-      sessionTitle: string,
-      options: { isArchived?: boolean } = {},
-    ) => {
-      setPendingDeletion({
-        kind: 'session',
-        sessionId,
-        sessionTitle,
-        isArchived: Boolean(options.isArchived),
-      });
-    },
-    [],
-  );
-
-  const confirmDeleteSession = useCallback(async (hardDelete = false) => {
-    if (pendingDeletion?.kind !== 'session') {
-      return;
-    }
-
-    const { sessionId } = pendingDeletion;
-    setPendingDeletion(null);
-
+  // Archives (or with `hardDelete` permanently deletes) one session and drops
+  // it from the lists that show it. Shared by the dialog and the row's bin.
+  const performSessionDeletion = useCallback(async (sessionId: string, hardDelete: boolean) => {
     try {
       const response = await api.deleteSession(sessionId, hardDelete);
 
@@ -896,7 +877,39 @@ export function useSidebarController({
       console.error('[Sidebar] Error deleting session:', error);
       alert(t('messages.deleteSessionError'));
     }
-  }, [fetchArchivedSessions, onSessionDelete, pendingDeletion, t]);
+  }, [fetchArchivedSessions, onSessionDelete, t]);
+
+  const showDeleteSessionConfirmation = useCallback(
+    (
+      sessionId: string,
+      sessionTitle: string,
+      options: { isArchived?: boolean; immediate?: boolean } = {},
+    ) => {
+      // The row's bin archives straight away: archiving is reversible from
+      // the Archive tab, so it needs no confirmation.
+      if (options.immediate && !options.isArchived) {
+        void performSessionDeletion(sessionId, false);
+        return;
+      }
+      setPendingDeletion({
+        kind: 'session',
+        sessionId,
+        sessionTitle,
+        isArchived: Boolean(options.isArchived),
+      });
+    },
+    [performSessionDeletion],
+  );
+
+  const confirmDeleteSession = useCallback(async (hardDelete = false) => {
+    if (pendingDeletion?.kind !== 'session') {
+      return;
+    }
+
+    const { sessionId } = pendingDeletion;
+    setPendingDeletion(null);
+    await performSessionDeletion(sessionId, hardDelete);
+  }, [pendingDeletion, performSessionDeletion]);
 
   const setProjectSessionSelection = useCallback((selection: SidebarSessionSelection) => {
     setSessionSelection(selection);

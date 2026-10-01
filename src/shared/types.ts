@@ -130,6 +130,15 @@ export type SessionDragPayload = {
   project?: Project;
 };
 
+/**
+ * How a sidebar session delete request runs. `immediate` archives right away
+ * (the row's bin button) instead of opening the archive-or-delete dialog;
+ * an archived session can still be restored or deleted from the Archive tab.
+ */
+export type SessionDeleteOptions = {
+  immediate?: boolean;
+};
+
 /** Named chat split arrangements: single = one chat, columns = left | right, rows = top / bottom, grid = four corners. */
 export type SplitLayoutMode = 'single' | 'columns' | 'rows' | 'grid';
 
@@ -1523,7 +1532,7 @@ export type SessionRowActions = {
   onStartEditingSession: (projectId: string, sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectId: string, sessionId: string, summary: string, provider: LLMProvider) => void;
-  onDeleteSession: (sessionId: string, sessionTitle: string) => void;
+  onDeleteSession: (sessionId: string, sessionTitle: string, options?: SessionDeleteOptions) => void;
   /** Branches a session into an independent one. Rows hide it for providers that cannot. */
   onForkSession?: (session: SessionWithProvider) => void;
 };
