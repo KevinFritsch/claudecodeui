@@ -30,6 +30,17 @@ import ChatMessagesPane from '@/modules/chat/transcript/ChatMessagesPane';
 import ChatComposer from '@/modules/chat/composer/ChatComposer';
 import CommandResultModal from '@/modules/chat/modals/CommandResultModal';
 
+// Whether a mouse button / touch is held down right now. Read by the composer
+// autofocus to tell "focus moved because the user pressed inside this pane"
+// (wait for release) from a sidebar click (already released).
+let isPointerPressed = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', () => { isPointerPressed = true; }, true);
+  const release = () => { isPointerPressed = false; };
+  window.addEventListener('pointerup', release, true);
+  window.addEventListener('pointercancel', release, true);
+}
+
 type ChatInterfaceProps = {
   isActive: boolean;
   selectedProject: Project | null;
@@ -329,30 +340,46 @@ function ChatInterface({
   // Only the focused split-view pane receives text from the quick settings panel.
   usePaletteOpsRegister({ insertComposerText: isFocusedPane ? insertComposerText : undefined });
 
-  // Opening a session (sidebar click, New Session, focusing a split pane)
-  // puts the caret in the composer so typing can start right away. Desktop
-  // only: on touch screens focusing would pop the keyboard over the chat.
-  // Only a change of session triggers it, so clicking into a split pane to
-  // select transcript text does not pull the caret away.
+  // Whenever this pane becomes the one being worked in (a session opens in it,
+  // focus moves to it in the split view, or Chat is shown again), the caret
+  // goes to its composer so typing can start right away. Desktop only: on
+  // touch screens focusing would pop the keyboard over the chat.
   const viewedSessionId = selectedSession?.id ?? null;
-  const lastAutoFocusedSessionRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!isActive || !isFocusedPane) return undefined;
-    if (lastAutoFocusedSessionRef.current === viewedSessionId) return undefined;
-    lastAutoFocusedSessionRef.current = viewedSessionId;
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return undefined;
-    const frame = window.requestAnimationFrame(() => {
+
+    let frame = 0;
+    const focusComposer = () => {
       const textarea = textareaRef.current;
+      if (!textarea) return;
+      // Clicking into a pane to select transcript text must keep the selection.
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && selection.toString().trim()) return;
       // Leave focus alone if the user is already typing into another field.
       const active = document.activeElement as HTMLElement | null;
       const isTypingElsewhere = Boolean(active && active !== textarea
         && (active.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)));
-      if (!textarea || isTypingElsewhere) return;
+      if (isTypingElsewhere) return;
       textarea.focus({ preventScroll: true });
       const caretPosition = textarea.value.length;
       textarea.setSelectionRange(caretPosition, caretPosition);
-    });
-    return () => window.cancelAnimationFrame(frame);
+    };
+    const scheduleFocus = () => {
+      frame = window.requestAnimationFrame(focusComposer);
+    };
+
+    // Focus moved here by pressing inside the pane: wait for the button to come
+    // up, so a click or text drag finishes before the caret moves.
+    if (isPointerPressed) {
+      window.addEventListener('pointerup', scheduleFocus, { once: true, capture: true });
+    } else {
+      scheduleFocus();
+    }
+    return () => {
+      window.removeEventListener('pointerup', scheduleFocus, true);
+      window.cancelAnimationFrame(frame);
+    };
   }, [isActive, isFocusedPane, textareaRef, viewedSessionId]);
 
   useEffect(() => {
