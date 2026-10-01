@@ -1,11 +1,12 @@
 import { memo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { DragEvent, KeyboardEvent } from 'react';
 import { Check, CheckSquare, Edit2, Loader2, MoreHorizontal, Square, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { Badge, Dialog, DialogContent, DialogTitle, LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
 import { cn } from '@/shared/utils';
-import type { LLMProvider, Project, ProjectSession, SessionWithProvider } from '@/shared/types';
+import { SESSION_DRAG_MIME } from '@/shared/constants';
+import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider } from '@/shared/types';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
@@ -129,6 +130,19 @@ function SidebarSessionItem({
       aria-hidden="true"
     />
   ) : null;
+
+  // Lets the row be dropped into the workspace split view. The project goes
+  // without its session list: the drop target only needs identity and paths.
+  const handleDragStart = (event: DragEvent<HTMLAnchorElement>) => {
+    if (isSelecting || isEditing) {
+      event.preventDefault();
+      return;
+    }
+    const { sessions: _sessions, ...projectWithoutSessions } = project;
+    const payload: SessionDragPayload = { sessionId: session.id, session, project: projectWithoutSessions };
+    event.dataTransfer.setData(SESSION_DRAG_MIME, JSON.stringify(payload));
+    event.dataTransfer.effectAllowed = 'copyMove';
+  };
 
   const setMobileOptionsOpen = (open: boolean) => {
     setIsMobileOptionsOpen(open);
@@ -381,6 +395,8 @@ function SidebarSessionItem({
       <div>
         <a
           href={`/session/${session.id}`}
+          draggable={!isSelecting && !isEditing}
+          onDragStart={handleDragStart}
           role={isSelecting ? 'checkbox' : undefined}
           aria-checked={isSelecting ? isChecked : undefined}
           aria-disabled={isSelecting && !isSelectable ? true : undefined}

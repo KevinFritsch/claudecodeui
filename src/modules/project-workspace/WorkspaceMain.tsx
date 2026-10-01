@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, type Dispatch, type SetStateAction, useState } from 'react';
+import React, { useCallback, useEffect, useRef, type Dispatch, type SetStateAction, useState } from 'react';
 
 import { ChatInterface } from '@/modules/chat';
 import { FileTree } from '@/modules/file-tree';
@@ -8,13 +8,18 @@ import { PluginTabContent } from '@/modules/plugins';
 import { BrowserUsePanel, useBrowserUseEnabled } from '@/modules/browser-use';
 import { usePaletteOpsRegister } from '@/modules/command-palette';
 import { TaskMasterPanel, useTaskMasterProjectSync, useTasksSettings } from '@/modules/task-master';
-import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab } from '@/shared/types';
+import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, ResolvedSplitPane, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab, SplitPaneTab } from '@/shared/types';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useFileOpenResolver } from '@/modules/project-workspace/hooks/useFileOpenResolver';
 import { EditorSidebar, useEditorSidebar } from '@/modules/code-editor';
 import WorkspaceHeader from '@/modules/project-workspace/WorkspaceHeader';
 import WorkspaceStateView from '@/modules/project-workspace/WorkspaceStateView';
 import WorkspaceErrorBoundary from '@/modules/project-workspace/WorkspaceErrorBoundary';
+import WorkspaceSplitView from '@/modules/project-workspace/WorkspaceSplitView';
+import { useSplitLayout } from '@/modules/project-workspace/hooks/useSplitLayout';
+
+const SPLIT_PANE_TABS = new Set<AppTab>(['chat', 'shell', 'files', 'git']);
+const isSplitPaneTab = (tab: AppTab): tab is SplitPaneTab => SPLIT_PANE_TABS.has(tab);
 
 type WorkspaceMainProps = {
   selectedProject: Project | null;
@@ -129,6 +134,132 @@ function WorkspaceMain({
     setRevealDirectory({ path: directoryPath });
   }, [setActiveTab]);
 
+  const splitLayout = useSplitLayout({
+    selectedProject,
+    selectedSession,
+    newSessionTrigger,
+    onNavigateToSession,
+    isMobile,
+  });
+
+  // Chat, Shell, Files and Source Control belong to each split pane; the
+  // header's tabs drive the focused pane. Tasks, Browser and plugins stay
+  // workspace-wide and replace the split view while open.
+  const isPaneTabActive = isSplitPaneTab(activeTab);
+  const { setPaneTab } = splitLayout;
+  const focusedPane = splitLayout.panes.find((pane) => pane.isFocused) ?? null;
+  const focusedPaneId = focusedPane?.paneId ?? null;
+  const focusedPaneTab = focusedPane?.tab ?? 'chat';
+  const focusedPaneIdRef = useRef(focusedPaneId);
+  focusedPaneIdRef.current = focusedPaneId;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  // Header tab clicks and programmatic switches (open file → Files) land on the focused pane.
+  useEffect(() => {
+    if (isSplitPaneTab(activeTab) && focusedPaneIdRef.current) {
+      setPaneTab(focusedPaneIdRef.current, activeTab);
+    }
+  }, [activeTab, setPaneTab]);
+
+  // A pane's own tab bar, or moving focus to a pane on another tab, updates
+  // the header. Skipped on mount so a restored header tab wins over the pane's.
+  const hasSyncedPaneTabRef = useRef(false);
+  useEffect(() => {
+    if (!hasSyncedPaneTabRef.current) {
+      hasSyncedPaneTabRef.current = true;
+      return;
+    }
+    if (isSplitPaneTab(activeTabRef.current) && activeTabRef.current !== focusedPaneTab) {
+      setActiveTab(focusedPaneTab);
+    }
+  }, [focusedPaneId, focusedPaneTab, setActiveTab]);
+
+  const renderPane = useCallback((pane: ResolvedSplitPane) => {
+    const isPaneVisible = isPaneTabActive;
+    return (
+      <>
+        <div className={`h-full ${pane.tab === 'chat' ? 'block' : 'hidden'}`}>
+          <WorkspaceErrorBoundary showDetails>
+            <ChatInterface
+              isActive={isPaneVisible && pane.tab === 'chat'}
+              isFocusedPane={pane.isFocused}
+              selectedProject={pane.project}
+              selectedSession={pane.session}
+              ws={ws}
+              sendMessage={sendMessage}
+              onFileOpen={handleFileOpen}
+              onNavigateToSession={onNavigateToSession}
+              onSessionEstablished={onSessionEstablished}
+              onShowSettings={onShowSettings}
+              showRawParameters={showRawParameters}
+              showThinking={showThinking}
+              sendByCtrlEnter={sendByCtrlEnter}
+              externalMessageUpdate={externalMessageUpdate}
+              newSessionTrigger={pane.newSessionTrigger}
+              onShowAllTasks={tasksEnabled ? showAllTasks : null}
+            />
+          </WorkspaceErrorBoundary>
+        </div>
+
+        {pane.project && pane.tab === 'shell' && (
+          <div className="h-full w-full overflow-hidden">
+            <StandaloneShell
+              project={pane.project}
+              session={pane.session}
+              showHeader={false}
+              isActive={isPaneVisible}
+            />
+          </div>
+        )}
+
+        {pane.project && pane.tab === 'files' && (
+          <div className="h-full overflow-hidden">
+            <FileTree
+              selectedProject={pane.project}
+              onFileOpen={handleFileOpen}
+              revealDirectory={pane.isFocused ? revealDirectory : null}
+            />
+          </div>
+        )}
+
+        {pane.project && pane.tab === 'git' && (
+          <div className="h-full overflow-hidden">
+            <GitPanel
+              selectedProject={pane.project}
+              isMobile={isMobile}
+              onFileOpen={handleFileOpen}
+              onProjectSelect={onProjectSelect}
+              onProjectsRefresh={onProjectsRefresh}
+            />
+          </div>
+        )}
+      </>
+    );
+  }, [
+    externalMessageUpdate,
+    handleFileOpen,
+    isMobile,
+    isPaneTabActive,
+    onNavigateToSession,
+    onProjectSelect,
+    onProjectsRefresh,
+    onSessionEstablished,
+    onShowSettings,
+    revealDirectory,
+    sendByCtrlEnter,
+    sendMessage,
+    showAllTasks,
+    showRawParameters,
+    showThinking,
+    tasksEnabled,
+    ws,
+  ]);
+
+  const handlePaneTabChange = useCallback((paneId: string, tab: SplitPaneTab) => {
+    setPaneTab(paneId, tab);
+  }, [setPaneTab]);
+
   // Stable arguments keep usePaletteOpsRegister's effect from tearing down and
   // rewriting the whole palette registry on every render.
   usePaletteOpsRegister({ openFile, openFileInEditor, openDirectory });
@@ -144,7 +275,7 @@ function WorkspaceMain({
   return (
     <div className="flex h-full flex-col">
       <WorkspaceHeader
-        activeTab={activeTab}
+        activeTab={isPaneTabActive ? focusedPaneTab : activeTab}
         setActiveTab={setActiveTab}
         selectedProject={selectedProject}
         selectedSession={selectedSession}
@@ -153,64 +284,22 @@ function WorkspaceMain({
         isMobile={isMobile}
         onMenuClick={onMenuClick}
         onRenameSession={onRenameSession}
+        splitLayout={splitLayout.layout}
+        onSplitLayoutChange={splitLayout.setLayout}
+        showSplitLayoutControls={isPaneTabActive}
       />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className={`flex min-h-0 min-w-[200px] flex-col overflow-hidden ${editorExpanded ? 'hidden' : ''} flex-1`}>
-          <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-            <WorkspaceErrorBoundary showDetails>
-              <ChatInterface
-                isActive={activeTab === 'chat'}
-                selectedProject={selectedProject}
-                selectedSession={selectedSession}
-                ws={ws}
-                sendMessage={sendMessage}
-                onFileOpen={handleFileOpen}
-                onNavigateToSession={onNavigateToSession}
-                onSessionEstablished={onSessionEstablished}
-                onShowSettings={onShowSettings}
-                showRawParameters={showRawParameters}
-                showThinking={showThinking}
-                sendByCtrlEnter={sendByCtrlEnter}
-                externalMessageUpdate={externalMessageUpdate}
-                newSessionTrigger={newSessionTrigger}
-                onShowAllTasks={tasksEnabled ? showAllTasks : null}
-              />
-            </WorkspaceErrorBoundary>
-          </div>
-
-          {activeTab === 'files' && (
-            <div className="h-full overflow-hidden">
-              <FileTree
-                selectedProject={selectedProject}
-                onFileOpen={handleFileOpen}
-                revealDirectory={revealDirectory}
-              />
-            </div>
-          )}
-
-          {activeTab === 'shell' && (
-            <div className="h-full w-full overflow-hidden">
-              <StandaloneShell
-                project={selectedProject}
-                session={selectedSession}
-                showHeader={false}
-                isActive={activeTab === 'shell'}
-              />
-            </div>
-          )}
-
-          {activeTab === 'git' && (
-            <div className="h-full overflow-hidden">
-              <GitPanel
-                selectedProject={selectedProject}
-                isMobile={isMobile}
-                onFileOpen={handleFileOpen}
-                onProjectSelect={onProjectSelect}
-                onProjectsRefresh={onProjectsRefresh}
-              />
-            </div>
-          )}
+          <WorkspaceSplitView
+            panes={splitLayout.panes}
+            isVisible={isPaneTabActive}
+            onFocusPane={splitLayout.focusPane}
+            onClosePane={splitLayout.closePane}
+            onDropSession={splitLayout.dropSession}
+            onPaneTabChange={handlePaneTabChange}
+            renderPane={renderPane}
+          />
 
           {shouldShowTasksTab && <TaskMasterPanel isVisible={activeTab === 'tasks'} />}
 
@@ -243,7 +332,8 @@ function WorkspaceMain({
           onToggleEditorExpand={handleToggleEditorExpand}
           onUnsavedChangesChange={handleUnsavedChangesChange}
           projectPath={selectedProject.path}
-          fillSpace={activeTab === 'files'}
+          // Only a lone Files pane hands the width to the editor; in a split the other panes keep theirs.
+          fillSpace={isPaneTabActive && focusedPaneTab === 'files' && splitLayout.panes.length === 1}
         />
       </div>
     </div>

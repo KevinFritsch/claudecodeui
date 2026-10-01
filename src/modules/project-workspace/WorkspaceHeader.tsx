@@ -1,8 +1,8 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Columns2, Grid2x2, Rows2, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { AppTab, Project, ProjectSession } from '@/shared/types';
+import type { AppTab, Project, ProjectSession, SplitLayoutMode } from '@/shared/types';
 import { cn } from '@/shared/utils';
 import MobileMenuButton from '@/modules/project-workspace/MobileMenuButton';
 import WorkspaceTabs from '@/modules/project-workspace/WorkspaceTabs';
@@ -19,7 +19,19 @@ type WorkspaceHeaderProps = {
   onMenuClick: () => void;
   /** Persists a new title for a session; resolves false when the backend refuses it. */
   onRenameSession: (sessionId: string, summary: string) => Promise<boolean>;
+  /** Current chat split arrangement, shown as the active layout button; null for a mixed layout. */
+  splitLayout: SplitLayoutMode | null;
+  onSplitLayoutChange: (layout: SplitLayoutMode) => void;
+  /** False while a workspace-wide tab (tasks, browser, plugin) hides the split view. */
+  showSplitLayoutControls: boolean;
 };
+
+const SPLIT_LAYOUT_OPTIONS: Array<{ layout: SplitLayoutMode; label: string; Icon: typeof Square }> = [
+  { layout: 'single', label: 'Single chat', Icon: Square },
+  { layout: 'columns', label: 'Two chats side by side', Icon: Columns2 },
+  { layout: 'rows', label: 'Two chats stacked', Icon: Rows2 },
+  { layout: 'grid', label: 'Four chats, one per corner', Icon: Grid2x2 },
+];
 
 /** Rendered by WorkspaceMain to show the workspace title alongside the scrollable tab bar. */
 export default function WorkspaceHeader({
@@ -32,6 +44,9 @@ export default function WorkspaceHeader({
   isMobile,
   onMenuClick,
   onRenameSession,
+  splitLayout,
+  onSplitLayoutChange,
+  showSplitLayoutControls,
 }: WorkspaceHeaderProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -154,6 +169,33 @@ export default function WorkspaceHeader({
             )}
           </div>
         </div>
+
+        {!isMobile && showSplitLayoutControls && (
+          <div
+            role="group"
+            aria-label="Chat layout"
+            className="hidden flex-shrink-0 items-center gap-0.5 rounded-md border border-border/60 p-0.5 sm:flex"
+          >
+            {SPLIT_LAYOUT_OPTIONS.map(({ layout, label, Icon }) => (
+              <button
+                key={layout}
+                type="button"
+                aria-label={label}
+                aria-pressed={splitLayout === layout}
+                title={label}
+                onClick={() => onSplitLayoutChange(layout)}
+                className={cn(
+                  'flex h-6 w-6 items-center justify-center rounded transition-colors',
+                  splitLayout === layout
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </header>
   );

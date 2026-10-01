@@ -47,6 +47,11 @@ type ChatInterfaceProps = {
   newSessionTrigger?: number;
   onTaskClick?: (...args: unknown[]) => void;
   onShowAllTasks?: (() => void) | null;
+  /**
+   * False for a split-view pane the user is not working in, so global
+   * shortcuts (Escape to abort) only act on the focused pane. Defaults to true.
+   */
+  isFocusedPane?: boolean;
 };
 
 /**
@@ -70,6 +75,7 @@ function ChatInterface({
   externalMessageUpdate,
   newSessionTrigger,
   onShowAllTasks,
+  isFocusedPane = true,
 }: ChatInterfaceProps) {
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const { subscribe } = useWebSocket();
@@ -320,10 +326,11 @@ function ChatInterface({
     });
   }, [setInput, textareaRef]);
 
-  usePaletteOpsRegister({ insertComposerText });
+  // Only the focused split-view pane receives text from the quick settings panel.
+  usePaletteOpsRegister({ insertComposerText: isFocusedPane ? insertComposerText : undefined });
 
   useEffect(() => {
-    if (!canAbortSession) {
+    if (!canAbortSession || !isFocusedPane) {
       return;
     }
 
@@ -340,7 +347,7 @@ function ChatInterface({
     return () => {
       document.removeEventListener('keydown', handleGlobalEscape, { capture: true });
     };
-  }, [canAbortSession, handleAbortSession]);
+  }, [canAbortSession, handleAbortSession, isFocusedPane]);
 
   useEffect(() => {
     return () => {

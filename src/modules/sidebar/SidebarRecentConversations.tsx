@@ -1,10 +1,11 @@
 import { Loader2, MessageSquare } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import type { TFunction } from 'i18next';
 
 import { Button, LLMProviderLogo, Tooltip } from '@/shared/ui';
 import { cn } from '@/shared/utils';
-import type { ProjectSession, RecentConversationListItem, SessionRowActions } from '@/shared/types';
+import { SESSION_DRAG_MIME } from '@/shared/constants';
+import type { ProjectSession, RecentConversationListItem, SessionDragPayload, SessionRowActions } from '@/shared/types';
 import { formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
 
@@ -130,6 +131,14 @@ export default function SidebarRecentConversations({
             );
           };
 
+          // Lets the row be dropped into the workspace split view, which
+          // resolves the owning project from the id.
+          const handleDragStart = (event: DragEvent<HTMLAnchorElement>) => {
+            const payload: SessionDragPayload = { sessionId: conversation.sessionId };
+            event.dataTransfer.setData(SESSION_DRAG_MIME, JSON.stringify(payload));
+            event.dataTransfer.effectAllowed = 'copyMove';
+          };
+
           return (
             <div key={conversation.sessionId} className="group relative">
               {/*
@@ -155,6 +164,8 @@ export default function SidebarRecentConversations({
               <a
                 href={`/session/${conversation.sessionId}`}
                 onClick={handleClick}
+                draggable
+                onDragStart={handleDragStart}
                 data-testid="recent-conversation-row"
                 className={cn(
                   'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left transition-colors',
