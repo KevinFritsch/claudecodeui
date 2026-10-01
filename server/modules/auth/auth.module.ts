@@ -18,8 +18,14 @@ const bcrypt = require('bcrypt') as BcryptAdapter;
 const databaseConnection = getConnection();
 
 const authService = createAuthService({
+  // nginx + Authelia guard every request when this is on; see AuthDependencies.externalAuth.
+  externalAuth: {
+    enabled: process.env.CLOUDCLI_EXTERNAL_AUTH === 'true',
+    logoutUrl: process.env.CLOUDCLI_EXTERNAL_LOGOUT_URL?.trim() || null,
+  },
   users: {
     hasUsers: () => userDb.hasUsers(),
+    getFirstUser: () => userDb.getFirstUser(),
     createUser: (username, passwordHash) => userDb.createUser(username, passwordHash),
     getUserByUsername: (username) => userDb.getUserByUsername(username),
     updateLastLogin: (userId) => userDb.updateLastLogin(userId),

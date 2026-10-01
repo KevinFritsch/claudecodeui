@@ -9,8 +9,10 @@ type AuthDependencies = Parameters<typeof createAuthService>[0];
 
 function createDependencies(overrides: Partial<AuthDependencies> = {}): AuthDependencies {
   return {
+    externalAuth: { enabled: false, logoutUrl: null },
     users: {
       hasUsers: () => false,
+      getFirstUser: () => undefined,
       createUser: (username, passwordHash) => ({ id: 1, username, password_hash: passwordHash }),
       getUserByUsername: () => undefined,
       updateLastLogin: () => undefined,
@@ -41,6 +43,7 @@ test('register hashes credentials and commits through injected dependencies', as
     },
     users: {
       hasUsers: () => false,
+      getFirstUser: () => undefined,
       createUser: (username, passwordHash) => {
         operations.push(`create:${username}:${passwordHash}`);
         return { id: 1, username, password_hash: passwordHash };
@@ -61,6 +64,7 @@ test('login rejects an invalid password without issuing a token', async () => {
   const service = createAuthService(createDependencies({
     users: {
       hasUsers: () => true,
+      getFirstUser: () => undefined,
       createUser: () => { throw new Error('unused'); },
       getUserByUsername: () => ({ id: 1, username: 'alice', password_hash: 'hash' }),
       updateLastLogin: () => undefined,
@@ -92,4 +96,34 @@ test('refreshSession issues a replacement token for the authenticated user', () 
 
   assert.deepEqual(result, { token: 'replacement-token' });
   assert.deepEqual(tokenUser, { id: 7, username: 'alice' });
+});
+
+test('external session is unavailable unless a login proxy is configured', () => {
+  const service = createAuthService(createDependencies());
+  assert.throws(() => service.createExternalSession(), (error: unknown) => error instanceof AppError && error.statusCode === 404);
+  assert.equal(service.getStatus().externalAuth, false);
+});
+
+test('with a login proxy, the status skips setup and a session is issued for the first user', () => {
+  const service = createAuthService(createDependencies({
+    externalAuth: { enabled: true, logoutUrl: 'https://auth.example.com/logout' },
+    users: {
+      hasUsers: () => true,
+      getFirstUser: () => ({ id: 7, username: 'kvn' }),
+      createUser: () => ({ id: 1, username: 'x' }),
+      getUserByUsername: () => undefined,
+      updateLastLogin: () => undefined,
+    },
+  }));
+  assert.deepEqual(service.getStatus(), {
+    needsSetup: false,
+    isAuthenticated: false,
+    externalAuth: true,
+    logoutUrl: 'https://auth.example.com/logout',
+  });
+  assert.deepEqual(service.createExternalSession(), {
+    success: true,
+    user: { id: 7, username: 'kvn' },
+    token: 'signed-token',
+  });
 });

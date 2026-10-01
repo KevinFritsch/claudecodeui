@@ -8,8 +8,15 @@ type AuthUser = {
 type AuthLoginUser = AuthUser & { password_hash: string };
 
 type AuthDependencies = {
+  /**
+   * Set when a login proxy in front of CloudCLI (Authelia) authenticates every
+   * request. CloudCLI's own login is then skipped: the browser is handed a
+   * session for the installation's user without a password.
+   */
+  externalAuth: { enabled: boolean; logoutUrl: string | null };
   users: {
     hasUsers(): boolean;
+    getFirstUser(): AuthUser | undefined;
     createUser(username: string, passwordHash: string): AuthUser;
     getUserByUsername(username: string): AuthLoginUser | undefined;
     updateLastLogin(userId: number): void;
@@ -43,8 +50,30 @@ export function createAuthService(dependencies: AuthDependencies) {
   return {
     getStatus() {
       return {
-        needsSetup: !dependencies.users.hasUsers(),
+        needsSetup: !dependencies.externalAuth.enabled && !dependencies.users.hasUsers(),
         isAuthenticated: false,
+        externalAuth: dependencies.externalAuth.enabled,
+        logoutUrl: dependencies.externalAuth.enabled ? dependencies.externalAuth.logoutUrl : null,
+      };
+    },
+
+    /**
+     * Issues a CloudCLI session without credentials. Only available when an
+     * external login proxy guards the server; otherwise it does not exist.
+     */
+    createExternalSession() {
+      if (!dependencies.externalAuth.enabled) {
+        throw new AppError('Not found', { code: 'NOT_FOUND', statusCode: 404 });
+      }
+      const user = dependencies.users.getFirstUser();
+      if (!user) {
+        throw new AppError('No CloudCLI user exists yet.', { code: 'AUTH_NO_USER', statusCode: 409 });
+      }
+      dependencies.users.updateLastLogin(numericUserId(user.id));
+      return {
+        success: true,
+        user: { id: user.id, username: user.username },
+        token: dependencies.generateToken(user),
       };
     },
 

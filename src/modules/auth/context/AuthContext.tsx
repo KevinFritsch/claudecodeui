@@ -35,6 +35,10 @@ type AuthSessionPayload = {
 
 type AuthStatusPayload = {
   needsSetup?: boolean;
+  /** A login proxy (Authelia) authenticates every request; CloudCLI's own login is skipped. */
+  externalAuth?: boolean;
+  /** Where Log out sends the browser in external-auth mode (the proxy's logout page). */
+  logoutUrl?: string | null;
 };
 
 type AuthUserPayload = {
@@ -113,6 +117,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The login proxy's logout page when CloudCLI runs behind one; null when CloudCLI handles login itself.
+  const [externalLogoutUrl, setExternalLogoutUrl] = useState<string | null>(null);
+  // Behind a login proxy an expired CloudCLI token is renewed silently instead
+  // of showing the login form; the expiry handler reads these through refs.
+  const isExternalAuthRef = useRef(false);
+  const renewExternalSessionRef = useRef<(() => void) | null>(null);
 
   const clearSession = useCallback(() => {
     setUser(null);
@@ -188,6 +198,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
     const handleSessionExpired = () => {
       clearSession();
+      if (isExternalAuthRef.current) {
+        renewExternalSessionRef.current?.();
+        return;
+      }
       setError(t(AUTH_ERROR_MESSAGES.sessionExpired));
     };
 
@@ -224,6 +238,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setNeedsSetup(false);
 
+      // Behind a login proxy the browser has already signed in there, so
+      // CloudCLI hands over its own session instead of showing a login form.
+      if (statusPayload?.externalAuth) {
+        isExternalAuthRef.current = true;
+        setExternalLogoutUrl(statusPayload.logoutUrl ?? null);
+        // Only probe a stored token; with none, a probe would just fire the
+        // session-expired handler for nothing.
+        const hasValidStoredToken = Boolean(readStoredToken()) && (await api.auth.user()).ok;
+        if (!hasValidStoredToken) {
+          const sessionResponse = await api.auth.externalSession();
+          const sessionPayload = await parseJsonSafely<AuthSessionPayload>(sessionResponse);
+          if (!sessionResponse.ok || !sessionPayload?.token) {
+            throw new Error(sessionPayload?.message || `External session failed (HTTP ${sessionResponse.status})`);
+          }
+          persistToken(sessionPayload.token);
+          setToken(sessionPayload.token);
+          setError(null);
+        }
+      }
+
       // Read the stored token instead of depending on `token` state: this
       // bootstrap flips `isLoading`, which swaps the whole app for the loading
       // screen, so it must run once on mount and not again on every
@@ -253,6 +287,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(false);
     }
   }, [checkOnboardingStatus, clearSession]);
+  renewExternalSessionRef.current = () => {
+    void checkAuthStatus();
+  };
 
   useEffect(() => {
     if (IS_PLATFORM) {
@@ -366,7 +403,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // JWT logout is client-side: the server endpoint does not maintain a
     // revocation list, so clearing the session is the complete operation.
     clearSession();
-  }, [clearSession]);
+    // Behind a login proxy, logging out means ending the proxy's session too,
+    // or the next page load would sign straight back in.
+    if (externalLogoutUrl) {
+      window.location.assign(externalLogoutUrl);
+    }
+  }, [clearSession, externalLogoutUrl]);
 
   const contextValue = useMemo<AuthContextValue>(
     () => ({

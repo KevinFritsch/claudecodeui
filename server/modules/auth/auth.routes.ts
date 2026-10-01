@@ -23,6 +23,14 @@ export function createAuthRouter(
     }
   });
 
+  router.post('/external-session', (_req, res, next) => {
+    try {
+      res.json(service.createExternalSession());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/register', async (req, res, next) => {
     try {
       const body = req.body as { username?: unknown; password?: unknown };
