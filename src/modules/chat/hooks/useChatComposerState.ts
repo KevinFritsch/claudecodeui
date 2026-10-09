@@ -167,6 +167,18 @@ const getNotificationSessionSummary = (
  */
 const SAFARI_IME_RACE_WINDOW_MS = 30;
 
+/**
+ * True on phones and tablets used by touch alone (no mouse or trackpad), where
+ * the on-screen keyboard's return key should insert a line break, not send.
+ * A tablet with a trackpad attached reports a fine pointer and keeps
+ * Enter-to-send.
+ */
+const isTouchOnlyDevice = (): boolean =>
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia('(pointer: coarse)').matches
+  && !window.matchMedia('(any-pointer: fine)').matches;
+
 export function useChatComposerState({
   selectedProject,
   selectedSession,
@@ -1190,6 +1202,11 @@ export function useChatComposerState({
         if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
           event.preventDefault();
           handleSubmit(event);
+        } else if (isTouchOnlyDevice()) {
+          // Phone keyboards have no Shift+Enter, so their return key (the
+          // line-break icon on Android) must insert a new line; the send
+          // button sends.
+          return;
         } else if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !sendByCtrlEnter) {
           event.preventDefault();
           handleSubmit(event);
