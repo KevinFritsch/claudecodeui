@@ -29,12 +29,18 @@ export function createSystemUpdateService(dependencies: SystemUpdateDependencies
   return {
     /** Selects and executes the correct update workflow for this installation. */
     async updateSystem() {
-      const updateCommand = dependencies.isPlatform
+      // CLOUDCLI_UPDATE_COMMAND overrides the workflow for installs that do not
+      // track upstream `main` directly, e.g. a fork that merges upstream into a
+      // customised branch (it runs from the app root, like the git workflow).
+      const customUpdateCommand = dependencies.environment.CLOUDCLI_UPDATE_COMMAND?.trim();
+      const updateCommand = customUpdateCommand
+        ? customUpdateCommand
+        : dependencies.isPlatform
         ? 'npm run update:platform'
         : dependencies.installMode === 'git'
           ? 'git checkout main && git pull && npm install'
           : 'npm install -g @cloudcli-ai/cloudcli@latest';
-      const workingDirectory = dependencies.isPlatform || dependencies.installMode === 'git'
+      const workingDirectory = customUpdateCommand || dependencies.isPlatform || dependencies.installMode === 'git'
         ? dependencies.appRoot
         : dependencies.homeDirectory;
 

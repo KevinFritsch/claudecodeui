@@ -116,3 +116,19 @@ test('process startup errors retain their message for the existing API contract'
     error: 'spawn sh failed',
   });
 });
+
+test('CLOUDCLI_UPDATE_COMMAND replaces the workflow and runs from the application root', async () => {
+  const calls: unknown[][] = [];
+  const dependencies = createDependencies({
+    installMode: 'npm',
+    environment: { CLOUDCLI_UPDATE_COMMAND: '  bash scripts/kvn-update.sh  ' },
+    runShellCommand: async (command, workingDirectory) => {
+      calls.push([command, workingDirectory]);
+      return { exitCode: 0, output: 'merged upstream', errorOutput: '' };
+    },
+  });
+
+  await createSystemUpdateService(dependencies).updateSystem();
+
+  assert.deepEqual(calls, [['bash scripts/kvn-update.sh', '/app/cloudcli']]);
+});
