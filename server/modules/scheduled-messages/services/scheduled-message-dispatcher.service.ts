@@ -14,6 +14,14 @@ const POLL_INTERVAL_MS = 30_000;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let dispatchInFlight = false;
+// Queued turns ("will send when this finishes") are checked far more often
+// than scheduled ones, and also right after any run completes.
+const QUEUED_POLL_INTERVAL_MS = 3_000;
+let queuedPollTimer: ReturnType<typeof setInterval> | null = null;
+let queuedDispatchInFlight = false;
+let queuedDispatchAgain = false;
+let unsubscribeRunCompleted: (() => void) | null = null;
+let dispatcherRuntime: ProviderRuntimeGateway | null = null;
 
 type StoredQueuedMessage = {
   content: string;
@@ -113,6 +121,69 @@ export async function dispatchQueuedMessages(runtime: ProviderRuntimeGateway): P
   return claimed;
 }
 
+/**
+ * Runs one queued-message pass, never two at once; a request that arrives
+ * while a pass is running schedules exactly one more pass after it.
+ */
+function triggerQueuedDispatch(runtime: ProviderRuntimeGateway): void {
+  if (queuedDispatchInFlight) {
+    queuedDispatchAgain = true;
+    return;
+  }
+  queuedDispatchInFlight = true;
+  void dispatchQueuedMessages(runtime)
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[ScheduledMessages] Queued dispatch failed', { error: message });
+    })
+    .finally(() => {
+      queuedDispatchInFlight = false;
+      if (queuedDispatchAgain) {
+        queuedDispatchAgain = false;
+        triggerQueuedDispatch(runtime);
+      }
+    });
+}
+
+/**
+ * "Send now" on a queued turn: takes the session's queued message (the stored
+ * one, or the content the client sent if its copy has not synced yet) and
+ * starts it immediately, interrupting the run in progress.
+ */
+export async function sendQueuedMessageNow(
+  input: { userId: number; sessionId: string; fallback: unknown },
+  runtime: ProviderRuntimeGateway | null = dispatcherRuntime,
+): Promise<{ started: boolean; error: string | null }> {
+  if (!runtime) {
+    return { started: false, error: 'The dispatcher is not running.' };
+  }
+  const candidate = sessionDraftsDb.listQueuedMessages()
+    .find((row) => row.userId === input.userId && row.sessionId === input.sessionId) ?? null;
+  const claimed = candidate && sessionDraftsDb.claimQueuedMessage(candidate) ? candidate : null;
+  const message = readQueuedMessage(claimed ? claimed.queuedMessage : input.fallback);
+  if (!message) {
+    return { started: false, error: 'There is no queued message for this session.' };
+  }
+
+  const result = await runDetachedChatTurn(
+    {
+      sessionId: input.sessionId,
+      userId: input.userId,
+      content: message.content,
+      options: { ...message.options, attachments: message.attachments },
+      interruptActiveRun: true,
+    },
+    { runtime },
+  );
+  if (!result.started && claimed) {
+    // Nothing was sent: keep the message queued rather than losing it.
+    sessionDraftsDb.restoreQueuedMessage(claimed);
+  } else {
+    sessionDraftsDb.deleteEmptyDraft(input.userId, input.sessionId);
+  }
+  return result;
+}
+
 async function sendClaimedMessage(
   row: ScheduledMessageRow,
   runtime: ProviderRuntimeGateway,
@@ -204,6 +275,13 @@ export function initializeScheduledMessageDispatcher(runtime: ProviderRuntimeGat
   // Never keep the process alive just to poll for scheduled messages.
   pollTimer.unref?.();
 
+  dispatcherRuntime = runtime;
+  // A queued turn goes as soon as the run it waits on ends; the short poll
+  // covers background work that finishes after the run itself.
+  unsubscribeRunCompleted = chatRunRegistry.onRunCompleted(() => triggerQueuedDispatch(runtime));
+  queuedPollTimer = setInterval(() => triggerQueuedDispatch(runtime), QUEUED_POLL_INTERVAL_MS);
+  queuedPollTimer.unref?.();
+
   // Catch up on anything that came due while the server was not running.
   poll();
 }
@@ -213,4 +291,11 @@ export function closeScheduledMessageDispatcher(): void {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  if (queuedPollTimer) {
+    clearInterval(queuedPollTimer);
+    queuedPollTimer = null;
+  }
+  unsubscribeRunCompleted?.();
+  unsubscribeRunCompleted = null;
+  dispatcherRuntime = null;
 }

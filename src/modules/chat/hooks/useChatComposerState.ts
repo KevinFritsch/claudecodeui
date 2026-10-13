@@ -1050,6 +1050,38 @@ export function useChatComposerState({
     setQueuedDraft(null);
   }, []);
 
+  // Whether a "Send now" request for the queued message is in flight.
+  const [isSendingQueuedNow, setIsSendingQueuedNow] = useState(false);
+
+  /**
+   * "Send now" on the queued card: the server interrupts the current run and
+   * sends the queued message right away, like Claude Code's own queue.
+   */
+  const sendQueuedDraftNow = useCallback(async () => {
+    if (!queuedDraft || !sessionKey || isSendingQueuedNow) {
+      return;
+    }
+    setIsSendingQueuedNow(true);
+    try {
+      const response = await api.scheduledMessages.sendQueuedNow(sessionKey, {
+        content: queuedDraft.content,
+        options: queuedDraft.options ?? {},
+        attachments: queuedDraft.uploadedAttachments ?? [],
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      }
+      // The server has taken it; drop the card (and the stored copy).
+      queuedDraftSessionRef.current = sessionKey;
+      setQueuedDraft(null);
+    } catch (error) {
+      console.error('[Chat] Send now failed:', error);
+    } finally {
+      setIsSendingQueuedNow(false);
+    }
+  }, [isSendingQueuedNow, queuedDraft, sessionKey]);
+
   // A voice transcript either fills the input (to edit before sending) or, when the
   // user tapped "stop and send", is submitted straight away. Mirror the value into
   // inputValueRef synchronously so handleSubmit reads the new text, not the stale state.
@@ -1369,6 +1401,8 @@ export function useChatComposerState({
     queuedDraft,
     editQueuedDraft,
     deleteQueuedDraft,
+    sendQueuedDraftNow,
+    isSendingQueuedNow,
     handleVoiceTranscript,
     handleInputChange,
     handleKeyDown,

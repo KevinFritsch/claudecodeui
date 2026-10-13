@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 
+import { sendQueuedMessageNow } from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
 import { scheduledMessagesService } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
 import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils.js';
 
@@ -54,6 +55,28 @@ router.post(
       scheduledFor: readString(body.scheduledFor, 'scheduledFor'),
     });
     res.status(201).json(createApiSuccessResponse(result));
+  }),
+);
+
+// "Send now" on a queued message: interrupts the run in progress and sends it.
+// Registered before `/:id` routes; the body may carry the queued message as a
+// fallback for a client whose copy has not reached the server yet.
+router.post(
+  '/queued/send-now',
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const result = await sendQueuedMessageNow({
+      userId: readUserId(req),
+      sessionId: readString(body.sessionId, 'sessionId'),
+      fallback: body.message,
+    });
+    if (!result.started) {
+      throw new AppError(result.error ?? 'The queued message could not be sent.', {
+        code: 'QUEUED_SEND_FAILED',
+        statusCode: 409,
+      });
+    }
+    res.json(createApiSuccessResponse({ sent: true }));
   }),
 );
 

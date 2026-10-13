@@ -290,6 +290,10 @@ export const api = {
     create: (body: { sessionId: string; content: string; scheduledFor: string; options?: unknown }) =>
       post('/api/scheduled-messages', body),
     cancel: (id: string) => del(`/api/scheduled-messages/${encodeURIComponent(id)}`),
+    // Sends a session's queued message now, interrupting the run in progress.
+    // `message` is the client's copy, used if the server's has not synced yet.
+    sendQueuedNow: (sessionId: string, message: unknown) =>
+      post('/api/scheduled-messages/queued/send-now', { sessionId, message }),
   },
 
   // Workspace file tree

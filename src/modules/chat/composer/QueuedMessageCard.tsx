@@ -1,11 +1,14 @@
 import { useTranslation } from 'react-i18next';
-import { PencilIcon, XIcon } from 'lucide-react';
+import { Loader2, PencilIcon, SendHorizontal, XIcon } from 'lucide-react';
 
 type QueuedMessageCardProps = {
   content: string;
   attachmentCount?: number;
   onEdit: () => void;
   onDelete: () => void;
+  /** Interrupts the reply in progress and sends this message right away. */
+  onSendNow: () => void;
+  isSendingNow?: boolean;
 };
 
 /**
@@ -17,6 +20,8 @@ export default function QueuedMessageCard({
   attachmentCount = 0,
   onEdit,
   onDelete,
+  onSendNow,
+  isSendingNow = false,
 }: QueuedMessageCardProps) {
   const { t } = useTranslation('chat');
 
@@ -41,6 +46,17 @@ export default function QueuedMessageCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onSendNow}
+            disabled={isSendingNow}
+            aria-label={t('input.queue.sendNow', { defaultValue: 'Send now (interrupts the current reply)' })}
+            title={t('input.queue.sendNow', { defaultValue: 'Send now (interrupts the current reply)' })}
+            className="mr-1 flex items-center gap-1.5 rounded-md bg-primary/15 px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-60"
+          >
+            {isSendingNow ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <SendHorizontal className="h-3.5 w-3.5" />}
+            {t('input.queue.sendNowShort', { defaultValue: 'Send now' })}
+          </button>
           <button
             type="button"
             onClick={onEdit}

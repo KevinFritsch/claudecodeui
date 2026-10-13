@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { closeConnection, initializeDatabase, scheduledMessagesDb, sessionDraftsDb, sessionsDb, userDb } from '@/modules/database/index.js';
-import { dispatchDueScheduledMessages, dispatchQueuedMessages } from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
+import { dispatchDueScheduledMessages, dispatchQueuedMessages, sendQueuedMessageNow } from '@/modules/scheduled-messages/services/scheduled-message-dispatcher.service.js';
 import { scheduledMessagesService } from '@/modules/scheduled-messages/services/scheduled-messages.service.js';
 import { chatRunRegistry } from '@/modules/websocket/index.js';
 
@@ -350,5 +350,77 @@ test('scheduling validates its input', async () => {
       () => scheduledMessagesService.schedule({ ...base, sessionId: 'nope', content: 'hi' }),
       (error: Error & { code?: string }) => error.code === 'SESSION_NOT_FOUND',
     );
+  });
+});
+
+test('Send now interrupts the run in progress and sends the queued message', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    sessionDraftsDb.saveDraft(userId, SESSION_ID, {
+      text: '',
+      queuedMessage: { content: 'do this instead', options: { model: 'claude-opus-5' } },
+    });
+    chatRunRegistry.startRun({
+      appSessionId: SESSION_ID,
+      provider: 'claude',
+      providerSessionId: null,
+      connection: null,
+      userId,
+    });
+
+    const runs: RunCall[] = [];
+    const aborts: string[] = [];
+    const result = await sendQueuedMessageNow(
+      { userId, sessionId: SESSION_ID, fallback: null },
+      createRuntime(runs, 'ok', aborts),
+    );
+
+    assert.deepEqual(result, { started: true, error: null });
+    assert.deepEqual(aborts, [SESSION_ID]);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].command, 'do this instead');
+    assert.equal(runs[0].options.model, 'claude-opus-5');
+    assert.equal(sessionDraftsDb.getDrafts(userId).length, 0, 'the queued message is not sent twice');
+  });
+});
+
+test('Send now uses the message the client sent when the server has no copy yet', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    const runs: RunCall[] = [];
+    const result = await sendQueuedMessageNow(
+      { userId, sessionId: SESSION_ID, fallback: { content: 'just queued', options: {} } },
+      createRuntime(runs),
+    );
+    assert.equal(result.started, true);
+    assert.equal(runs[0]?.command, 'just queued');
+  });
+});
+
+test('Send now with nothing queued reports it instead of sending an empty turn', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    const runs: RunCall[] = [];
+    const result = await sendQueuedMessageNow({ userId, sessionId: SESSION_ID, fallback: null }, createRuntime(runs));
+    assert.equal(result.started, false);
+    assert.equal(runs.length, 0);
+  });
+});
+
+test('finishing a run notifies run-completed listeners, which is what sends queued turns right away', async () => {
+  await withIsolatedDatabase(async (userId) => {
+    const completed: string[] = [];
+    const unsubscribe = chatRunRegistry.onRunCompleted((sessionId) => completed.push(sessionId));
+    try {
+      chatRunRegistry.startRun({
+        appSessionId: SESSION_ID,
+        provider: 'claude',
+        providerSessionId: null,
+        connection: null,
+        userId,
+      });
+      chatRunRegistry.completeRun(SESSION_ID, { exitCode: 0 });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      assert.deepEqual(completed, [SESSION_ID]);
+    } finally {
+      unsubscribe();
+    }
   });
 });

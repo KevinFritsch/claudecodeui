@@ -100,6 +100,25 @@ function evictRunLater(run: ChatRun): void {
  * 3. Buffer the event for `chat.subscribe` replay.
  * 4. Flip the run to `completed` when the terminal `complete` event passes by.
  */
+/** Callbacks run (on the next tick) whenever a session's run finishes. */
+const runCompletedListeners = new Set<(appSessionId: string) => void>();
+
+function notifyRunCompleted(appSessionId: string): void {
+  // Deferred so listeners see the registry and runtime after this event has
+  // been fully recorded (status flipped, process wind-down started).
+  setTimeout(() => {
+    for (const listener of runCompletedListeners) {
+      try {
+        listener(appSessionId);
+      } catch (error) {
+        console.error('[ChatRunRegistry] run-completed listener failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }, 0);
+}
+
 function decorateAndRecordEvent(run: ChatRun, message: NormalizedMessage): NormalizedMessage | null {
   // Exactly-one-complete contract: when a run is aborted the chat handler
   // emits the terminal `complete` immediately, but the killed runtime may
@@ -124,6 +143,7 @@ function decorateAndRecordEvent(run: ChatRun, message: NormalizedMessage): Norma
     run.status = 'completed';
     run.completedAt = Date.now();
     evictRunLater(run);
+    notifyRunCompleted(run.appSessionId);
   }
 
   run.events.push(outbound);
@@ -323,6 +343,16 @@ export const chatRunRegistry = {
     }
 
     run.writer.sendComplete(opts);
+  },
+
+  /**
+   * Subscribes to run completions; returns the unsubscribe function. Used by
+   * the queued-message dispatcher to send a queued turn as soon as the run it
+   * was waiting on ends, instead of on its next poll.
+   */
+  onRunCompleted(listener: (appSessionId: string) => void): () => void {
+    runCompletedListeners.add(listener);
+    return () => runCompletedListeners.delete(listener);
   },
 
   /**
