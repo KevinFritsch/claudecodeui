@@ -193,7 +193,7 @@ export default function WorkspaceSplitView({
   return (
     <div
       ref={containerRef}
-      className={cn('relative h-full', !isVisible && 'hidden')}
+      className={cn('relative min-h-0 flex-1', !isVisible && 'hidden')}
       // Capture phase: a session drag must not reach the composer's file
       // dropzone or a textarea, which would paste the row's link.
       onDragEnterCapture={handleDragOver}

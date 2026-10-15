@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check, Edit2, GitBranch, MoreHorizontal, Trash2, X } from 'lucide-react';
+import { Check, Columns2, Edit2, GitBranch, MoreHorizontal, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { ActionMenu } from '@/shared/ui';
@@ -29,6 +29,8 @@ type SessionOptionsProps = {
   onDeleteSession: (sessionId: string, sessionTitle: string, options?: SessionDeleteOptions) => void;
   /** Bound by the caller, which owns the session object the fork needs. */
   onFork?: () => void;
+  /** Opens the session next to the focused chat instead of replacing it. */
+  onOpenBeside?: () => void;
   /** Withheld where the row has nowhere to send a delete. */
   canDelete?: boolean;
   className?: string;
@@ -58,6 +60,7 @@ export default function SessionOptions({
   onSaveEditingSession,
   onDeleteSession,
   onFork,
+  onOpenBeside,
   canDelete = true,
   className,
   t,
@@ -141,6 +144,21 @@ export default function SessionOptions({
         </>
       ) : (
         <>
+        {onOpenBeside && (
+          <button
+            type="button"
+            aria-label={`Open ${sessionName} beside the current chat`}
+            title="Open beside the current chat (Alt+click)"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenBeside();
+            }}
+            className="touch:opacity-100 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all duration-150 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Columns2 className="h-3.5 w-3.5" />
+          </button>
+        )}
         {/* One-click archive; shown on hover (always on touch) so idle rows stay calm. */}
         {canDelete && !isProcessing && (
           <button

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '@/shared/api';
+import { consumeSessionPlacement } from '@/shared/sessionPlacement';
 import type {
   LLMProvider,
   Project,
@@ -26,6 +27,8 @@ type SplitPane = {
   project: Project | null;
   cells: number[];
   tab: SplitPaneTab;
+  /** New Session counter for this pane's chat; bumped only when New Session targets this pane. */
+  newSessionTrigger?: number;
 };
 
 type SplitLayoutState = {
@@ -39,6 +42,28 @@ type SplitLayoutState = {
   pendingSessionId: string | null;
 };
 
+/**
+ * One project tab: its own split layout. Opening a session of another project
+ * switches tab instead of replacing a pane in the current one.
+ */
+type WorkspaceTab = {
+  /** The project this tab belongs to; null until the first session opens in it. */
+  projectId: string | null;
+  label: string;
+  layout: SplitLayoutState;
+};
+
+type WorkspaceTabsState = {
+  tabs: WorkspaceTab[];
+  activeProjectId: string | null;
+  /**
+   * Tab the user just clicked, waiting for the router to reach its session;
+   * like a pane's pendingSessionId, it stops a stale router update from
+   * switching straight back.
+   */
+  pendingProjectId: string | null;
+};
+
 type UseSplitLayoutArgs = {
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
@@ -48,6 +73,7 @@ type UseSplitLayoutArgs = {
 };
 
 const SPLIT_LAYOUT_STORAGE_KEY = 'cloudcli:split-layout';
+const WORKSPACE_TABS_STORAGE_KEY = 'cloudcli:workspace-tabs';
 const ALL_CELLS = [0, 1, 2, 3];
 const SPLIT_PANE_TABS: SplitPaneTab[] = ['chat', 'shell', 'files', 'git'];
 const LEFT_HALF = [0, 2];
@@ -66,7 +92,7 @@ const createPane = (
   cells: number[],
   session: ProjectSession | null = null,
   project: Project | null = null,
-): SplitPane => ({ paneId: createPaneId(), session, project, cells, tab: 'chat' });
+): SplitPane => ({ paneId: createPaneId(), session, project, cells, tab: 'chat', newSessionTrigger: 0 });
 
 const stripProjectSessions = (project: Project | null): Project | null => {
   if (!project) return null;
@@ -119,14 +145,17 @@ function describeLayout(panes: SplitPane[]): SplitLayoutMode | null {
   return null;
 }
 
-function readStoredLayout(): SplitLayoutState {
-  const fallbackPane = createPane(ALL_CELLS);
-  const fallback: SplitLayoutState = { panes: [fallbackPane], focusedPaneId: fallbackPane.paneId, pendingSessionId: null };
+const createLayout = (): SplitLayoutState => {
+  const pane = createPane(ALL_CELLS);
+  return { panes: [pane], focusedPaneId: pane.paneId, pendingSessionId: null };
+};
 
+/** Rebuilds one stored layout, or a fresh single pane when it is missing or malformed. */
+function parseStoredLayout(storedValue: unknown): SplitLayoutState {
+  const fallback = createLayout();
   try {
-    const raw = window.localStorage.getItem(SPLIT_LAYOUT_STORAGE_KEY);
-    if (!raw) return fallback;
-    const stored = JSON.parse(raw) as { panes?: Array<Partial<SplitPane>>; focusedPaneId?: string; layout?: string };
+    if (!storedValue || typeof storedValue !== 'object') return fallback;
+    const stored = storedValue as { panes?: Array<Partial<SplitPane>>; focusedPaneId?: string; layout?: string };
     if (!Array.isArray(stored.panes) || stored.panes.length === 0 || stored.panes.length > 4) return fallback;
 
     // Layouts saved before panes carried cells used a fixed mode instead.
@@ -141,6 +170,7 @@ function readStoredLayout(): SplitLayoutState {
       project: pane?.project && typeof pane.project.projectId === 'string' ? pane.project : null,
       cells: Array.isArray(pane?.cells) ? pane.cells : legacyCells[stored.layout ?? '']?.[index] ?? [],
       tab: SPLIT_PANE_TABS.includes(pane?.tab as SplitPaneTab) ? (pane!.tab as SplitPaneTab) : 'chat',
+      newSessionTrigger: 0,
     }));
 
     // Only accept a layout whose panes are rectangles that tile the grid exactly.
@@ -156,6 +186,40 @@ function readStoredLayout(): SplitLayoutState {
     return { panes, focusedPaneId, pendingSessionId: null };
   } catch {
     return fallback;
+  }
+}
+
+/** Restores the project tabs; a layout saved before tabs existed becomes the first tab. */
+function readStoredTabs(): WorkspaceTabsState {
+  const single = (layout: SplitLayoutState): WorkspaceTabsState => {
+    const project = layout.panes.find((pane) => pane.project)?.project ?? null;
+    return {
+      tabs: [{ projectId: project?.projectId ?? null, label: project?.displayName ?? '', layout }],
+      activeProjectId: project?.projectId ?? null,
+      pendingProjectId: null,
+    };
+  };
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_TABS_STORAGE_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw) as { tabs?: Array<{ projectId?: unknown; label?: unknown; layout?: unknown }>; activeProjectId?: unknown };
+      const tabs = (Array.isArray(stored.tabs) ? stored.tabs : []).map((tab) => ({
+        projectId: typeof tab.projectId === 'string' ? tab.projectId : null,
+        label: typeof tab.label === 'string' ? tab.label : '',
+        layout: parseStoredLayout(tab.layout),
+      }));
+      if (tabs.length > 0) {
+        const activeProjectId = typeof stored.activeProjectId === 'string'
+          && tabs.some((tab) => tab.projectId === stored.activeProjectId)
+          ? stored.activeProjectId
+          : tabs[0].projectId;
+        return { tabs, activeProjectId, pendingProjectId: null };
+      }
+    }
+    const legacy = window.localStorage.getItem(SPLIT_LAYOUT_STORAGE_KEY);
+    return single(legacy ? parseStoredLayout(JSON.parse(legacy)) : createLayout());
+  } catch {
+    return single(createLayout());
   }
 }
 
@@ -215,6 +279,38 @@ function placePane(panes: SplitPane[], placed: SplitPane, targetCells: number[])
 }
 
 /**
+ * Makes room for one more pane next to the focused one and focuses it (empty;
+ * the caller fills it). Splits the focused pane along its longer side; a
+ * single-cell pane in a full grid gives way to an empty pane if there is one,
+ * otherwise the next pane is reused.
+ */
+function addPaneBeside(layout: SplitLayoutState): SplitLayoutState {
+  const focused = layout.panes.find((pane) => pane.paneId === layout.focusedPaneId) ?? layout.panes[0];
+  const empty = layout.panes.find((pane) => !pane.session && pane.paneId !== focused.paneId);
+  if (empty) {
+    return { ...layout, focusedPaneId: empty.paneId, pendingSessionId: null };
+  }
+  const columns = new Set(focused.cells.map((cell) => cell % 2));
+  const rows = new Set(focused.cells.map((cell) => Math.floor(cell / 2)));
+  let target: number[] | null = null;
+  if (columns.size === 2) {
+    // Spans both columns (full screen or a top/bottom half): take its right side.
+    target = focused.cells.filter((cell) => cell % 2 === 1);
+  } else if (rows.size === 2) {
+    // A left/right half: take its bottom.
+    target = focused.cells.filter((cell) => Math.floor(cell / 2) === 1);
+  }
+  if (target) {
+    const added = createPane(target);
+    return { ...layout, panes: placePane(layout.panes, added, target), focusedPaneId: added.paneId, pendingSessionId: null };
+  }
+  // Four chats already: reuse the pane after the focused one.
+  const index = layout.panes.findIndex((pane) => pane.paneId === focused.paneId);
+  const next = layout.panes[(index + 1) % layout.panes.length];
+  return { ...layout, focusedPaneId: next.paneId, pendingSessionId: null };
+}
+
+/**
  * Owns the chat split view: which sessions are open side by side, stacked or
  * in corners, and which pane is focused. The focused pane always mirrors the
  * router's session, so the sidebar, header and URL keep following it.
@@ -226,72 +322,212 @@ export function useSplitLayout({
   onNavigateToSession,
   isMobile,
 }: UseSplitLayoutArgs) {
-  // The panes, the cells each covers and the session it holds, plus focus; persisted across reloads.
-  const [state, setState] = useState<SplitLayoutState>(readStoredLayout);
-  // Per-pane New Session counters, so New Session only resets the focused pane's chat.
-  const [paneNewSessionTriggers, setPaneNewSessionTriggers] = useState<Record<string, number>>({});
+  // Project tabs, each with its own panes and focus; persisted across reloads.
+  const [tabsState, setTabsState] = useState<WorkspaceTabsState>(readStoredTabs);
 
+  const activeTab = tabsState.tabs.find((tab) => tab.projectId === tabsState.activeProjectId) ?? tabsState.tabs[0];
+  const state = activeTab.layout;
+  const tabsStateRef = useRef(tabsState);
+  tabsStateRef.current = tabsState;
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  /** Updates the active tab's layout; the pane-level actions below all go through this. */
+  const setState = useCallback((update: SplitLayoutState | ((previous: SplitLayoutState) => SplitLayoutState)) => {
+    setTabsState((previous) => {
+      const activeIndex = Math.max(0, previous.tabs.findIndex((tab) => tab.projectId === previous.activeProjectId));
+      const tabs = [...previous.tabs];
+      const layout = typeof update === 'function' ? update(tabs[activeIndex].layout) : update;
+      tabs[activeIndex] = { ...tabs[activeIndex], layout };
+      return { ...previous, tabs };
+    });
+  }, []);
+
   const previousPrimaryIdRef = useRef<string | null>(selectedSession?.id ?? null);
+  const previousPrimaryProjectIdRef = useRef<string | null>(selectedProject?.projectId ?? null);
   const previousNewSessionTriggerRef = useRef(newSessionTrigger);
 
   useEffect(() => {
     try {
-      const { pendingSessionId: _pending, ...persisted } = state;
-      window.localStorage.setItem(SPLIT_LAYOUT_STORAGE_KEY, JSON.stringify(persisted));
+      const persisted = {
+        activeProjectId: tabsState.activeProjectId,
+        tabs: tabsState.tabs.map((tab) => ({
+          projectId: tab.projectId,
+          label: tab.label,
+          layout: { panes: tab.layout.panes, focusedPaneId: tab.layout.focusedPaneId },
+        })),
+      };
+      window.localStorage.setItem(WORKSPACE_TABS_STORAGE_KEY, JSON.stringify(persisted));
     } catch {
       // Storage full or disabled: the layout just won't survive a reload.
     }
-  }, [state]);
+  }, [tabsState]);
 
-  // Keep the focused pane in step with the router's session (sidebar clicks,
-  // New Session, forks). A session already open in another pane moves focus
-  // there instead of being opened twice.
+  // Keep the workspace in step with the router's session (sidebar clicks,
+  // New Session, forks):
+  //  1. a session already open in some tab gets focus there;
+  //  2. a session of another project opens in that project's tab (created if
+  //     needed), so the current tab's split stays as it is;
+  //  3. otherwise it replaces the focused pane, or goes beside it when the
+  //     sidebar asked for that ("Open beside", Alt+click).
   useEffect(() => {
     const primaryId = selectedSession?.id ?? null;
+    const primaryProjectId = selectedProject?.projectId ?? null;
     const previousPrimaryId = previousPrimaryIdRef.current;
+    const navigationChanged = primaryId !== previousPrimaryId
+      || primaryProjectId !== previousPrimaryProjectIdRef.current;
     previousPrimaryIdRef.current = primaryId;
+    previousPrimaryProjectIdRef.current = primaryProjectId;
     const primaryProject = stripProjectSessions(selectedProject);
+    // Read outside the updater: a hint applies to this navigation only.
+    const placement = navigationChanged ? consumeSessionPlacement() : null;
 
-    setState((previous) => {
-      const updatePaneObjects = (paneIndex: number, extra: Partial<SplitLayoutState> = {}): SplitLayoutState => {
-        const panes = [...previous.panes];
-        panes[paneIndex] = { ...panes[paneIndex], session: selectedSession, project: primaryProject };
-        return { ...previous, panes, ...extra };
+    setTabsState((previous) => {
+      const applyToLayout = (layout: SplitLayoutState, besideIfNew: boolean): SplitLayoutState => {
+        const updatePaneObjects = (base: SplitLayoutState, paneIndex: number, extra: Partial<SplitLayoutState> = {}) => {
+          const panes = [...base.panes];
+          panes[paneIndex] = { ...panes[paneIndex], session: selectedSession, project: primaryProject };
+          return { ...base, panes, ...extra };
+        };
+        const matchIndex = primaryId ? layout.panes.findIndex((pane) => pane.session?.id === primaryId) : -1;
+
+        if (layout.pendingSessionId && primaryId !== layout.pendingSessionId && primaryId === previousPrimaryId) {
+          // The router has not caught up with a pane click yet; only refresh the
+          // copy of the still-selected session wherever it is shown.
+          return matchIndex >= 0 ? updatePaneObjects(layout, matchIndex) : layout;
+        }
+        if (matchIndex >= 0) {
+          return updatePaneObjects(layout, matchIndex, { focusedPaneId: layout.panes[matchIndex].paneId, pendingSessionId: null });
+        }
+        const base = besideIfNew && layout.panes.some((pane) => pane.session) ? addPaneBeside(layout) : layout;
+        const focusedIndex = Math.max(0, base.panes.findIndex((pane) => pane.paneId === base.focusedPaneId));
+        return updatePaneObjects(base, focusedIndex, { pendingSessionId: null });
       };
 
-      const matchIndex = primaryId
-        ? previous.panes.findIndex((pane) => pane.session?.id === primaryId)
-        : -1;
+      const tabs = [...previous.tabs];
+      const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.projectId === previous.activeProjectId));
+      const withLabel = (tab: WorkspaceTab): WorkspaceTab => (
+        tab.projectId && tab.projectId === primaryProjectId && selectedProject?.displayName && tab.label !== selectedProject.displayName
+          ? { ...tab, label: selectedProject.displayName }
+          : tab
+      );
 
-      if (previous.pendingSessionId && primaryId !== previous.pendingSessionId && primaryId === previousPrimaryId) {
-        // The router has not caught up with a pane click yet; only refresh the
-        // copy of the still-selected session wherever it is shown.
-        return matchIndex >= 0 ? updatePaneObjects(matchIndex) : previous;
+      // A tab click is still waiting for the router: only refresh objects.
+      if (previous.pendingProjectId) {
+        const pendingTab = tabs.find((tab) => tab.projectId === previous.pendingProjectId);
+        const arrived = !pendingTab?.layout.pendingSessionId || primaryId === pendingTab.layout.pendingSessionId;
+        if (!arrived && primaryId === previousPrimaryId) {
+          return previous;
+        }
       }
 
-      if (matchIndex >= 0) {
-        return updatePaneObjects(matchIndex, {
-          focusedPaneId: previous.panes[matchIndex].paneId,
-          pendingSessionId: null,
-        });
+      let targetIndex = activeIndex;
+      if (primaryId && !tabs[activeIndex].layout.panes.some((pane) => pane.session?.id === primaryId)) {
+        const holder = tabs.findIndex((tab) => tab.layout.panes.some((pane) => pane.session?.id === primaryId));
+        if (holder >= 0) {
+          targetIndex = holder;
+        }
+      }
+      if (targetIndex === activeIndex && primaryProjectId && tabs[activeIndex].projectId !== primaryProjectId) {
+        const openSessionHere = primaryId && tabs[activeIndex].layout.panes.some((pane) => pane.session?.id === primaryId);
+        if (!openSessionHere) {
+          if (tabs[activeIndex].projectId === null) {
+            // A tab nobody has claimed yet (first run) becomes this project's.
+            tabs[activeIndex] = { ...tabs[activeIndex], projectId: primaryProjectId };
+          } else {
+            const existing = tabs.findIndex((tab) => tab.projectId === primaryProjectId);
+            if (existing >= 0) {
+              targetIndex = existing;
+            } else {
+              tabs.push({ projectId: primaryProjectId, label: selectedProject?.displayName ?? '', layout: createLayout() });
+              targetIndex = tabs.length - 1;
+            }
+          }
+        }
       }
 
-      const focusedIndex = Math.max(0, previous.panes.findIndex((pane) => pane.paneId === previous.focusedPaneId));
-      return updatePaneObjects(focusedIndex, { pendingSessionId: null });
+      const switched = targetIndex !== activeIndex;
+      tabs[targetIndex] = withLabel({
+        ...tabs[targetIndex],
+        layout: applyToLayout(tabs[targetIndex].layout, placement === 'beside' && !switched),
+      });
+      // A tab left behind with no session in it (an unused New Session) goes away.
+      const pruned = switched && !tabs[activeIndex].layout.panes.some((pane) => pane.session)
+        ? tabs.filter((_, index) => index !== activeIndex)
+        : tabs;
+      return {
+        tabs: pruned,
+        activeProjectId: tabs[targetIndex].projectId,
+        pendingProjectId: null,
+      };
     });
   }, [selectedProject, selectedSession]);
 
+  // New Session resets only the focused pane of the active tab. Done inside
+  // the state update so it lands on the pane chosen by the sync effect above
+  // (which may have just switched tab or opened a pane beside).
   useEffect(() => {
     if (newSessionTrigger === previousNewSessionTriggerRef.current) return;
     previousNewSessionTriggerRef.current = newSessionTrigger;
-    const focusedPaneId = stateRef.current.focusedPaneId;
-    setPaneNewSessionTriggers((previous) => ({
+    setState((previous) => ({
       ...previous,
-      [focusedPaneId]: (previous[focusedPaneId] ?? 0) + 1,
+      panes: previous.panes.map((pane) => (
+        pane.paneId === previous.focusedPaneId
+          ? { ...pane, newSessionTrigger: (pane.newSessionTrigger ?? 0) + 1 }
+          : pane
+      )),
     }));
-  }, [newSessionTrigger]);
+  }, [newSessionTrigger, setState]);
+
+  /** Switches to a project tab and points the router at its focused session. */
+  const selectTab = useCallback((projectId: string | null) => {
+    const current = tabsStateRef.current;
+    if (current.activeProjectId === projectId) return;
+    const tab = current.tabs.find((candidate) => candidate.projectId === projectId);
+    if (!tab) return;
+    const focused = tab.layout.panes.find((pane) => pane.paneId === tab.layout.focusedPaneId);
+    const target = focused?.session ? focused : tab.layout.panes.find((pane) => pane.session) ?? null;
+    if (!target?.session) return;
+    const sessionId = target.session.id;
+    setTabsState((previous) => ({
+      ...previous,
+      activeProjectId: projectId,
+      pendingProjectId: projectId,
+      tabs: previous.tabs.map((candidate) => (
+        candidate.projectId === projectId
+          ? { ...candidate, layout: { ...candidate.layout, focusedPaneId: target.paneId, pendingSessionId: sessionId } }
+          : candidate
+      )),
+    }));
+    onNavigateToSession(sessionId);
+  }, [onNavigateToSession]);
+
+  /** Closes a project tab; closing the active one moves to a neighbour. */
+  const closeTab = useCallback((projectId: string | null) => {
+    const current = tabsStateRef.current;
+    if (current.tabs.length <= 1) return;
+    const index = current.tabs.findIndex((tab) => tab.projectId === projectId);
+    if (index < 0) return;
+    const remaining = current.tabs.filter((_, tabIndex) => tabIndex !== index);
+    if (current.activeProjectId !== projectId) {
+      setTabsState((previous) => ({ ...previous, tabs: previous.tabs.filter((tab) => tab.projectId !== projectId) }));
+      return;
+    }
+    const next = remaining[Math.min(index, remaining.length - 1)];
+    const focused = next.layout.panes.find((pane) => pane.paneId === next.layout.focusedPaneId);
+    const target = focused?.session ? focused : next.layout.panes.find((pane) => pane.session) ?? null;
+    const sessionId = target?.session?.id ?? null;
+    setTabsState({
+      tabs: remaining.map((tab) => (
+        tab === next && target && sessionId
+          ? { ...tab, layout: { ...tab.layout, focusedPaneId: target.paneId, pendingSessionId: sessionId } }
+          : tab
+      )),
+      activeProjectId: next.projectId,
+      pendingProjectId: sessionId ? next.projectId : null,
+    });
+    if (sessionId) onNavigateToSession(sessionId);
+  }, [onNavigateToSession]);
 
   /** Makes a pane the focused one and points the router at its session. */
   const focusPane = useCallback((paneId: string) => {
@@ -300,7 +536,7 @@ export function useSplitLayout({
     if (!pane?.session || current.focusedPaneId === paneId) return;
     setState((previous) => ({ ...previous, focusedPaneId: paneId, pendingSessionId: pane.session!.id }));
     onNavigateToSession(pane.session.id);
-  }, [onNavigateToSession]);
+  }, [onNavigateToSession, setState]);
 
   /** Switches one pane between its chat, shell, files and source control tabs. */
   const setPaneTab = useCallback((paneId: string, tab: SplitPaneTab) => {
@@ -312,7 +548,7 @@ export function useSplitLayout({
         panes: previous.panes.map((candidate) => (candidate.paneId === paneId ? { ...candidate, tab } : candidate)),
       };
     });
-  }, []);
+  }, [setState]);
 
   const setLayout = useCallback((nextLayout: SplitLayoutMode) => {
     setState((previous) => {
@@ -344,7 +580,7 @@ export function useSplitLayout({
       });
       return { ...previous, panes: corners };
     });
-  }, []);
+  }, [setState]);
 
   /** Opens a session dragged from the sidebar where it was dropped: a half, a corner, or over an existing pane. */
   const dropSession = useCallback(async (payload: SessionDragPayload, target: SplitDropTarget) => {
@@ -389,7 +625,7 @@ export function useSplitLayout({
 
     setState({ panes, focusedPaneId: targetPaneId, pendingSessionId: session.id });
     onNavigateToSession(session.id);
-  }, [onNavigateToSession]);
+  }, [onNavigateToSession, setState]);
 
   const closePane = useCallback((paneId: string) => {
     const current = stateRef.current;
@@ -423,7 +659,7 @@ export function useSplitLayout({
     const navigateTo = isClosingFocused ? nextFocusedPane.session?.id ?? null : null;
     setState({ panes, focusedPaneId: nextFocusedPane.paneId, pendingSessionId: navigateTo });
     if (navigateTo) onNavigateToSession(navigateTo);
-  }, [onNavigateToSession]);
+  }, [onNavigateToSession, setState]);
 
   const visiblePanes = isMobile
     ? state.panes.filter((pane) => pane.paneId === state.focusedPaneId).map((pane) => ({ ...pane, cells: ALL_CELLS }))
@@ -441,13 +677,23 @@ export function useSplitLayout({
       cells: pane.cells,
       tab: pane.tab,
       isFocused,
-      newSessionTrigger: paneNewSessionTriggers[pane.paneId] ?? 0,
+      newSessionTrigger: pane.newSessionTrigger ?? 0,
     };
   });
+
+  const tabs = tabsState.tabs.map((tab) => ({
+    projectId: tab.projectId,
+    label: tab.label || 'Project',
+    sessionCount: tab.layout.panes.filter((pane) => pane.session).length,
+    isActive: tab === activeTab,
+  }));
 
   return {
     layout: isMobile ? ('single' as const) : describeLayout(state.panes),
     panes,
+    tabs,
+    selectTab,
+    closeTab,
     focusPane,
     setPaneTab,
     setLayout,

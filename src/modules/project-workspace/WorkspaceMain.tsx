@@ -16,6 +16,7 @@ import WorkspaceHeader from '@/modules/project-workspace/WorkspaceHeader';
 import WorkspaceStateView from '@/modules/project-workspace/WorkspaceStateView';
 import WorkspaceErrorBoundary from '@/modules/project-workspace/WorkspaceErrorBoundary';
 import WorkspaceSplitView from '@/modules/project-workspace/WorkspaceSplitView';
+import WorkspaceProjectTabs from '@/modules/project-workspace/WorkspaceProjectTabs';
 import { useSplitLayout } from '@/modules/project-workspace/hooks/useSplitLayout';
 
 const SPLIT_PANE_TABS = new Set<AppTab>(['chat', 'shell', 'files', 'git']);
@@ -291,6 +292,13 @@ function WorkspaceMain({
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className={`flex min-h-0 min-w-[200px] flex-col overflow-hidden ${editorExpanded ? 'hidden' : ''} flex-1`}>
+          {isPaneTabActive && (
+            <WorkspaceProjectTabs
+              tabs={splitLayout.tabs}
+              onSelect={splitLayout.selectTab}
+              onClose={splitLayout.closeTab}
+            />
+          )}
           <WorkspaceSplitView
             panes={splitLayout.panes}
             isVisible={isPaneTabActive}

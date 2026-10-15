@@ -1,8 +1,9 @@
-import { CheckSquare, Plus, Trash2 } from 'lucide-react';
+import { CheckSquare, Columns2, Plus, Trash2 } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { Button } from '@/shared/ui';
 import { cn, withAlpha } from '@/shared/utils';
+import { requestSessionPlacement } from '@/shared/sessionPlacement';
 import type { LLMProvider, Project, ProjectSession, SessionWithProvider, SidebarSessionSelection, SessionDeleteOptions } from '@/shared/types';
 import SidebarSessionItem from '@/modules/sidebar/SidebarSessionItem';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
@@ -188,6 +189,20 @@ export default function SidebarProjectSessions({
             </span>
             {t('sessions.newSession')}
           </button>
+          {!isCompact && (
+            <button
+              type="button"
+              aria-label="New session beside the current chat"
+              title="New session beside the current chat"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              onClick={() => {
+                requestSessionPlacement('beside');
+                onNewSession(project);
+              }}
+            >
+              <Columns2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           {initialSessionsLoaded && selectableSessionIds.length > 0 && (
             <button
               type="button"

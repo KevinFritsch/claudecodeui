@@ -9,6 +9,7 @@ import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
+import { requestSessionPlacement } from '@/shared/sessionPlacement';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
 
@@ -419,7 +420,7 @@ function SidebarSessionItem({
             buttonVariants({ variant: 'ghost' }),
             'h-auto w-full justify-start rounded-md border bg-card p-2 text-left font-normal transition-all duration-150',
             // Room for ⋯, and on hover for the bin next to it.
-            isSelecting ? 'pr-2' : 'pr-11 group-hover:pr-[4.5rem]',
+            isSelecting ? 'pr-2' : 'pr-11 group-hover:pr-24',
             isSelected ? 'border-primary/20 bg-primary/5' : 'border-border/30',
             !isSelected && isProcessing
               ? 'border-border/60 bg-muted/20 hover:bg-muted/25'
@@ -437,6 +438,13 @@ function SidebarSessionItem({
               if (isSelectable) {
                 toggleSelected();
               }
+              return;
+            }
+            if (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+              // Alt+click: open beside the current chat instead of replacing it.
+              event.preventDefault();
+              requestSessionPlacement('beside');
+              onSessionSelect(session, project.projectId);
               return;
             }
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -510,6 +518,10 @@ function SidebarSessionItem({
             onSaveEditingSession={onSaveEditingSession}
             onDeleteSession={onDeleteSession}
             onFork={onForkSession ? () => onForkSession(session) : undefined}
+            onOpenBeside={() => {
+              requestSessionPlacement('beside');
+              onSessionSelect(session, project.projectId);
+            }}
             t={t}
           />
         )}

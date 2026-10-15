@@ -8,6 +8,7 @@ import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { ProjectSession, RecentConversationListItem, SessionDragPayload, SessionRowActions } from '@/shared/types';
 import { formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
+import { requestSessionPlacement } from '@/shared/sessionPlacement';
 import { useProjectColors } from '@/shared/hooks/useProjectColors';
 
 type SidebarRecentConversationsProps = {
@@ -121,7 +122,17 @@ export default function SidebarRecentConversations({
           const sessionRename =
             rename?.target === 'session' && rename.id === conversation.sessionId ? rename : null;
 
+          const openBeside = () => {
+            requestSessionPlacement('beside');
+            onConversationSelect(conversation.projectId, conversation.sessionId, conversation.provider);
+          };
           const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+            if (event.button === 0 && event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+              // Alt+click: open beside the current chat instead of replacing it.
+              event.preventDefault();
+              openBeside();
+              return;
+            }
             if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
               return;
             }
@@ -170,7 +181,7 @@ export default function SidebarRecentConversations({
                 onDragStart={handleDragStart}
                 data-testid="recent-conversation-row"
                 className={cn(
-                  'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left transition-colors group-hover:pr-[4.5rem]',
+                  'flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 pr-11 text-left transition-colors group-hover:pr-24',
                   isSelected
                     ? 'bg-primary/10 text-foreground'
                     : 'text-foreground hover:bg-accent/60',
@@ -243,6 +254,7 @@ export default function SidebarRecentConversations({
                 onCancelEditingSession={sessionActions.onCancelEditingSession}
                 onSaveEditingSession={sessionActions.onSaveEditingSession}
                 onDeleteSession={sessionActions.onDeleteSession}
+                onOpenBeside={openBeside}
                 // The fork path reads only the id, provider and owning project,
                 // which is all a recents row knows about the session.
                 onFork={sessionActions.onForkSession
