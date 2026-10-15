@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { projectsDb, sessionsDb } from '@/modules/database/index.js';
+import { projectsDb, sessionTopicsDb, sessionsDb } from '@/modules/database/index.js';
 import { generateDisplayName } from '@/modules/projects/index.js';
 import { connectedClients, WS_OPEN_STATE } from '@/modules/websocket/services/websocket-state.service.js';
 import type { SessionUpsertedEvent } from '@/shared/types.js';
@@ -20,6 +20,7 @@ import type { SessionUpsertedEvent } from '@/shared/types.js';
  */
 async function buildSessionUpsertedEvent(
   sessionIdOrProviderSessionId: string,
+  reason?: SessionUpsertedEvent['reason'],
 ): Promise<SessionUpsertedEvent | null> {
   // Resolving by provider id first covers the watcher, which only ever sees
   // the id written in the transcript. For a row where the two ids are equal
@@ -47,6 +48,7 @@ async function buildSessionUpsertedEvent(
     session: {
       id: row.session_id,
       summary: row.custom_name || '',
+      topic: sessionTopicsDb.getTopic(row.session_id),
       messageCount: 0,
       lastActivity: row.updated_at ?? row.created_at ?? new Date().toISOString(),
     },
@@ -59,6 +61,7 @@ async function buildSessionUpsertedEvent(
         isStarred: Boolean(project.isStarred),
       }
       : null,
+    ...(reason ? { reason } : {}),
     timestamp: new Date().toISOString(),
   };
 }
@@ -78,8 +81,11 @@ function sendToConnectedClients(payloads: string[]): void {
 }
 
 /** Announces one session. Used by the chat run registry when a run reports its provider-native id. */
-export async function broadcastSessionUpserted(sessionIdOrProviderSessionId: string): Promise<void> {
-  const event = await buildSessionUpsertedEvent(sessionIdOrProviderSessionId);
+export async function broadcastSessionUpserted(
+  sessionIdOrProviderSessionId: string,
+  reason?: SessionUpsertedEvent['reason'],
+): Promise<void> {
+  const event = await buildSessionUpsertedEvent(sessionIdOrProviderSessionId, reason);
   if (event) {
     sendToConnectedClients([JSON.stringify(event)]);
   }

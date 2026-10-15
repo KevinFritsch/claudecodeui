@@ -71,6 +71,9 @@ function SidebarSessionItem({
   const sessionView = createSessionViewModel(session, currentTime, t);
   const isSelected = selectedSession?.id === session.id;
   const compactSessionAge = formatCompactAge(sessionView.sessionTime, currentTime);
+  // The server's short "current subject" line; hidden when it just repeats the name.
+  const topic = typeof session.topic === 'string' ? session.topic.trim() : '';
+  const showTopic = Boolean(topic) && topic.toLowerCase() !== sessionView.sessionName.trim().toLowerCase();
   const [isMobileOptionsOpen, setIsMobileOptionsOpen] = useState(false);
   const showAttentionIndicator = needsAttention && !isSelected;
   // Background work takes the recent-activity dot's place: the session is
@@ -234,13 +237,20 @@ function SidebarSessionItem({
                   <span className="ml-auto flex-shrink-0 text-[11px] text-muted-foreground">{compactSessionAge}</span>
                 )}
               </div>
-              <div className="mt-0.5 flex items-center">
-                {sessionView.messageCount > 0 && (
-                  <Badge variant="secondary" className="px-1 py-0 text-xs">
-                    {sessionView.messageCount}
-                  </Badge>
-                )}
-              </div>
+              {(showTopic || sessionView.messageCount > 0) && (
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                  {showTopic && (
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={topic}>
+                      {topic}
+                    </span>
+                  )}
+                  {sessionView.messageCount > 0 && (
+                    <Badge variant="secondary" className="px-1 py-0 text-xs">
+                      {sessionView.messageCount}
+                    </Badge>
+                  )}
+                </div>
+              )}
             </div>
 
             {!isSelecting && !isProcessing && (
@@ -495,9 +505,16 @@ function SidebarSessionItem({
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 flex items-center">
-                {sessionView.messageCount > 0 && <Badge variant="secondary" className="px-1 py-0 text-xs">{sessionView.messageCount}</Badge>}
-              </div>
+              {(showTopic || sessionView.messageCount > 0) && (
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                  {showTopic && (
+                    <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-muted-foreground" title={topic}>
+                      {topic}
+                    </span>
+                  )}
+                  {sessionView.messageCount > 0 && <Badge variant="secondary" className="px-1 py-0 text-xs">{sessionView.messageCount}</Badge>}
+                </div>
+              )}
             </div>
           </div>
         </a>

@@ -1631,6 +1631,8 @@ export type ArchivedSessionListItem = {
   projectPath: string | null;
   projectDisplayName: string;
   sessionTitle: string;
+  /** Latest subject of the conversation ("fixing tabs UI"), refreshed by the server after runs. */
+  topic?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   lastActivity: string | null;
@@ -1640,7 +1642,7 @@ export type ArchivedSessionListItem = {
 /** The subset of archived-session fields needed to render a recent-conversations row and reopen the session it points at. */
 export type RecentConversationListItem = Pick<
   ArchivedSessionListItem,
-  'sessionId' | 'provider' | 'projectId' | 'projectDisplayName' | 'sessionTitle' | 'lastActivity'
+  'sessionId' | 'provider' | 'projectId' | 'projectDisplayName' | 'sessionTitle' | 'topic' | 'lastActivity'
 >;
 
 /**

@@ -18,6 +18,8 @@ export type {
   QueuedSessionMessageRecord,
   SessionDraftRecord,
 } from '@/modules/database/repositories/session-drafts.db.js';
+// sessionTopicsDb: used by Session Topics to store each session's latest subject line, and by session payload builders to read it.
+export { sessionTopicsDb } from '@/modules/database/repositories/session-topics.db.js';
 export { sessionsDb } from '@/modules/database/repositories/sessions.db.js';
 export { userDb } from '@/modules/database/repositories/users.js';
 // userPreferencesDb: used by the User module to persist the settings that used to live in browser localStorage.

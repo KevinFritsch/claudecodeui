@@ -234,6 +234,21 @@ CREATE TABLE IF NOT EXISTS session_drafts (
 `;
 
 /**
+ * A short, regularly refreshed subject line per session ("fixing tabs UI"),
+ * shown under the session name in the sidebar. Generated after a run ends;
+ * `source_hash` fingerprints the exchange it was generated from so an
+ * unchanged conversation is never summarised twice.
+ */
+export const SESSION_TOPICS_TABLE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS session_topics (
+    session_id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    source_hash TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+/**
  * Provider sessions an app session has moved off, and must never move back to.
  *
  * Editing a message on a provider that cannot resume a transcript partway
@@ -310,4 +325,6 @@ ${USER_PREFERENCES_TABLE_SCHEMA_SQL}
 ${SESSION_DRAFTS_TABLE_SCHEMA_SQL}
 
 ${SUPERSEDED_PROVIDER_SESSIONS_TABLE_SCHEMA_SQL}
+
+${SESSION_TOPICS_TABLE_SCHEMA_SQL}
 `;

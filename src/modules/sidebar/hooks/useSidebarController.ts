@@ -348,23 +348,30 @@ export function useSidebarController({
 
     // Trimmed, because that is how the server derives a row's `sessionTitle`.
     const summaryBySessionId = new Map<string, string>();
+    // Topics change after every run; the project lists get them live over the socket.
+    const topicBySessionId = new Map<string, string>();
     for (const project of projects) {
       for (const session of project.sessions ?? []) {
         const summary = typeof session.summary === 'string' ? session.summary.trim() : '';
         if (summary) {
           summaryBySessionId.set(session.id, summary);
         }
+        const topic = typeof session.topic === 'string' ? session.topic.trim() : '';
+        if (topic) {
+          topicBySessionId.set(session.id, topic);
+        }
       }
     }
 
     let changed = false;
     const next = recentConversations.map((conversation) => {
-      const summary = summaryBySessionId.get(conversation.sessionId);
-      if (summary === undefined || summary === conversation.sessionTitle) {
+      const summary = summaryBySessionId.get(conversation.sessionId) ?? conversation.sessionTitle;
+      const topic = topicBySessionId.get(conversation.sessionId) ?? conversation.topic ?? null;
+      if (summary === conversation.sessionTitle && topic === (conversation.topic ?? null)) {
         return conversation;
       }
       changed = true;
-      return { ...conversation, sessionTitle: summary };
+      return { ...conversation, sessionTitle: summary, topic };
     });
     return changed ? next : recentConversations;
   }, [projects, recentConversations]);

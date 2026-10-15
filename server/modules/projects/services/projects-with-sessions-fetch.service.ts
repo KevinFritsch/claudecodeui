@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { projectsDb, sessionsDb } from '@/modules/database/index.js';
+import { projectsDb, sessionTopicsDb, sessionsDb } from '@/modules/database/index.js';
 import { sessionSynchronizerService } from '@/modules/providers/index.js';
 import { WS_OPEN_STATE, connectedClients } from '@/modules/websocket/index.js';
 import type { RealtimeClientConnection } from '@/shared/types.js';
@@ -11,6 +11,8 @@ type SessionSummary = {
   id: string;
   provider: string;
   summary: string;
+  /** Latest subject of the conversation, refreshed as it moves on. */
+  topic: string | null;
   messageCount: number;
   lastActivity: string;
 };
@@ -122,6 +124,7 @@ function mapSessionRowToSummary(row: SessionRepositoryRow): SessionSummary {
     id: row.session_id,
     provider: row.provider,
     summary: row.custom_name || '',
+    topic: sessionTopicsDb.getTopic(row.session_id),
     messageCount: 0,
     lastActivity: row.updated_at ?? row.created_at ?? new Date().toISOString(),
   };

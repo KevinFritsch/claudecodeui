@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-import { projectsDb, sessionsDb } from '@/modules/database/index.js';
+import { projectsDb, sessionTopicsDb, sessionsDb } from '@/modules/database/index.js';
 import { broadcastSessionUpserted, chatRunRegistry } from '@/modules/websocket/index.js';
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
 import { listBusyClaudeCliSessions } from '@/modules/providers/services/claude-cli-liveness.service.js';
@@ -57,6 +57,7 @@ type ArchivedSessionListItem = {
   projectPath: string | null;
   projectDisplayName: string;
   sessionTitle: string;
+  topic: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   lastActivity: string | null;
@@ -65,7 +66,7 @@ type ArchivedSessionListItem = {
 
 type RecentSessionListItem = Pick<
   ArchivedSessionListItem,
-  'sessionId' | 'provider' | 'projectId' | 'projectDisplayName' | 'sessionTitle' | 'lastActivity'
+  'sessionId' | 'provider' | 'projectId' | 'projectDisplayName' | 'sessionTitle' | 'topic' | 'lastActivity'
 >;
 
 type RecentSessionsPage = {
@@ -234,6 +235,7 @@ export const sessionsService = {
         projectId: project?.project_id ?? null,
         projectDisplayName: resolveProjectDisplayName(projectPath, project?.custom_project_name),
         sessionTitle: session.custom_name?.trim() || session.session_id,
+        topic: sessionTopicsDb.getTopic(session.session_id),
         lastActivity: session.updated_at ?? session.created_at ?? null,
       };
     });
@@ -658,6 +660,7 @@ export const sessionsService = {
         projectPath,
         projectDisplayName: resolveProjectDisplayName(projectPath, project?.custom_project_name),
         sessionTitle: session.custom_name?.trim() || session.session_id,
+        topic: sessionTopicsDb.getTopic(session.session_id),
         createdAt: session.created_at ?? null,
         updatedAt: session.updated_at ?? null,
         lastActivity: session.updated_at ?? session.created_at ?? null,

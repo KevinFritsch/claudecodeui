@@ -207,7 +207,13 @@ export default function SidebarRecentConversations({
                       }}
                       aria-hidden
                     />
-                    <span className="truncate">{conversation.projectDisplayName}</span>
+                    <span className={cn('truncate', conversation.topic && 'max-w-[45%] flex-shrink-0')}>{conversation.projectDisplayName}</span>
+                    {conversation.topic && (
+                      <>
+                        <span className="flex-shrink-0 text-muted-foreground/40">·</span>
+                        <span className="min-w-0 truncate" title={conversation.topic}>{conversation.topic}</span>
+                      </>
+                    )}
                     {isProcessing ? (
                       <>
                         <span className="flex-shrink-0 text-muted-foreground/40">·</span>

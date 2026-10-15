@@ -275,10 +275,14 @@ export type SessionUpsertedEvent = {
   session: {
     id: string;
     summary: string;
+    /** Latest subject of the conversation (see the session-topics module). */
+    topic: string | null;
     messageCount: number;
     lastActivity: string;
   };
   project: SessionUpsertedProject | null;
+  /** `topic` when only the session's subject line changed, so clients skip reloading the transcript. */
+  reason?: 'topic';
   timestamp: string;
 };
 
