@@ -107,3 +107,39 @@ test('closing the active tab moves to the other one', () => {
   assert.deepEqual(result.current.tabs.map((tab) => tab.label), ['GolfN']);
   assert.equal(navigations.at(-1), 'g1');
 });
+
+const tabOf = (result: { current: ReturnType<typeof useSplitLayout> }) => result.current.tabs.find((tab) => tab.isActive)?.label;
+
+test('a layout saved with two projects side by side is split into one tab per project', () => {
+  window.localStorage.setItem('cloudcli:split-layout', JSON.stringify({
+    panes: [
+      { paneId: 'a', session: G1, project: GOLFN, cells: [0, 2], tab: 'chat' },
+      { paneId: 'b', session: K1, project: KVN, cells: [1, 3], tab: 'chat' },
+    ],
+    focusedPaneId: 'a',
+  }));
+  const { result } = renderWorkspace({ project: GOLFN, session: G1, trigger: 0 });
+  assert.deepEqual(result.current.tabs.map((tab) => tab.label).sort(), ['GolfN', 'Kvn']);
+  assert.deepEqual(ids(result.current.panes), ['g1']);
+});
+
+test('a dropped session of another project goes to that project tab', async () => {
+  const { result, rerender } = renderWorkspace({ project: GOLFN, session: G1, trigger: 0 });
+  await act(async () => {
+    await result.current.dropSession({ sessionId: 'k1', session: K1, project: KVN }, { kind: 'cells', cells: [1, 3] });
+  });
+  rerender({ project: KVN, session: K1, trigger: 0 });
+  assert.equal(tabOf(result), 'Kvn');
+  assert.deepEqual(ids(result.current.panes), ['k1']);
+
+  act(() => result.current.selectTab('golfn'));
+  assert.deepEqual(ids(result.current.panes), ['g1'], 'the GolfN tab holds GolfN only');
+});
+
+test('open beside with a session of another project opens it in that project tab', () => {
+  const { result, rerender } = renderWorkspace({ project: GOLFN, session: G1, trigger: 0 });
+  requestSessionPlacement('beside');
+  rerender({ project: KVN, session: K1, trigger: 0 });
+  assert.equal(tabOf(result), 'Kvn');
+  assert.deepEqual(ids(result.current.panes), ['k1']);
+});

@@ -213,11 +213,11 @@ function readStoredTabs(): WorkspaceTabsState {
           && tabs.some((tab) => tab.projectId === stored.activeProjectId)
           ? stored.activeProjectId
           : tabs[0].projectId;
-        return { tabs, activeProjectId, pendingProjectId: null };
+        return normalizeTabs({ tabs, activeProjectId, pendingProjectId: null });
       }
     }
     const legacy = window.localStorage.getItem(SPLIT_LAYOUT_STORAGE_KEY);
-    return single(legacy ? parseStoredLayout(JSON.parse(legacy)) : createLayout());
+    return normalizeTabs(single(legacy ? parseStoredLayout(JSON.parse(legacy)) : createLayout()));
   } catch {
     return single(createLayout());
   }
@@ -310,6 +310,75 @@ function addPaneBeside(layout: SplitLayoutState): SplitLayoutState {
   return { ...layout, focusedPaneId: next.paneId, pendingSessionId: null };
 }
 
+/** The project a pane's session belongs to, or null when unknown. */
+const paneProjectId = (pane: SplitPane): string | null => {
+  if (!pane.session) return null;
+  const fromProject = pane.project?.projectId;
+  if (fromProject) return fromProject;
+  const tagged = pane.session.__projectId;
+  return typeof tagged === 'string' && tagged ? tagged : null;
+};
+
+/**
+ * Enforces "a tab only holds sessions of its own project": any session found
+ * in another project's tab moves to its own project's tab (created if needed,
+ * placed in an empty pane or beside the focused one). Run after every change,
+ * so no path (drag and drop, open beside, layouts saved before tabs) can mix
+ * projects in one tab.
+ */
+function normalizeTabs(state: WorkspaceTabsState): WorkspaceTabsState {
+  const strays: SplitPane[] = [];
+  let tabs = state.tabs.map((tab) => {
+    if (!tab.projectId) return tab;
+    const misplaced = tab.layout.panes.filter((pane) => {
+      const projectId = paneProjectId(pane);
+      return projectId !== null && projectId !== tab.projectId;
+    });
+    if (misplaced.length === 0) return tab;
+    strays.push(...misplaced);
+    let panes = tab.layout.panes.filter((pane) => !misplaced.includes(pane));
+    if (panes.length === 0) return { ...tab, layout: createLayout() };
+    panes = fillUncoveredCells(panes);
+    if (panes.filter((pane) => pane.session).length <= 1) {
+      const survivor = panes.find((pane) => pane.session) ?? panes[0];
+      panes = [{ ...survivor, cells: ALL_CELLS }];
+    }
+    const focusedPaneId = panes.some((pane) => pane.paneId === tab.layout.focusedPaneId)
+      ? tab.layout.focusedPaneId
+      : (panes.find((pane) => pane.session) ?? panes[0]).paneId;
+    return { ...tab, layout: { ...tab.layout, panes, focusedPaneId } };
+  });
+  if (strays.length === 0) return state;
+
+  for (const stray of strays) {
+    const projectId = paneProjectId(stray)!;
+    const index = tabs.findIndex((tab) => tab.projectId === projectId);
+    const alone: SplitLayoutState = {
+      panes: [{ ...stray, cells: ALL_CELLS }], focusedPaneId: stray.paneId, pendingSessionId: null,
+    };
+    if (index < 0) {
+      tabs = [...tabs, { projectId, label: stray.project?.displayName ?? '', layout: alone }];
+      continue;
+    }
+    const target = tabs[index];
+    if (target.layout.panes.some((pane) => pane.session?.id === stray.session!.id)) continue;
+    let layout: SplitLayoutState;
+    if (!target.layout.panes.some((pane) => pane.session)) {
+      layout = alone;
+    } else {
+      const roomy = addPaneBeside(target.layout);
+      layout = {
+        ...roomy,
+        panes: roomy.panes.map((pane) => (
+          pane.paneId === roomy.focusedPaneId ? { ...pane, session: stray.session, project: stray.project, tab: stray.tab } : pane
+        )),
+      };
+    }
+    tabs = tabs.map((tab, tabIndex) => (tabIndex === index ? { ...tab, layout } : tab));
+  }
+  return { ...state, tabs };
+}
+
 /**
  * Owns the chat split view: which sessions are open side by side, stacked or
  * in corners, and which pane is focused. The focused pane always mirrors the
@@ -323,7 +392,11 @@ export function useSplitLayout({
   isMobile,
 }: UseSplitLayoutArgs) {
   // Project tabs, each with its own panes and focus; persisted across reloads.
-  const [tabsState, setTabsState] = useState<WorkspaceTabsState>(readStoredTabs);
+  const [tabsState, setRawTabsState] = useState<WorkspaceTabsState>(readStoredTabs);
+  // Every change is normalized, so a tab can never end up holding another project's session.
+  const setTabsState = useCallback((update: WorkspaceTabsState | ((previous: WorkspaceTabsState) => WorkspaceTabsState)) => {
+    setRawTabsState((previous) => normalizeTabs(typeof update === 'function' ? update(previous) : update));
+  }, []);
 
   const activeTab = tabsState.tabs.find((tab) => tab.projectId === tabsState.activeProjectId) ?? tabsState.tabs[0];
   const state = activeTab.layout;
@@ -341,7 +414,7 @@ export function useSplitLayout({
       tabs[activeIndex] = { ...tabs[activeIndex], layout };
       return { ...previous, tabs };
     });
-  }, []);
+  }, [setTabsState]);
 
   const previousPrimaryIdRef = useRef<string | null>(selectedSession?.id ?? null);
   const previousPrimaryProjectIdRef = useRef<string | null>(selectedProject?.projectId ?? null);
@@ -421,29 +494,33 @@ export function useSplitLayout({
         }
       }
 
+      // The session's project decides the tab: its own project's tab (created
+      // if needed). A first-run tab nobody has claimed yet is adopted.
       let targetIndex = activeIndex;
-      if (primaryId && !tabs[activeIndex].layout.panes.some((pane) => pane.session?.id === primaryId)) {
-        const holder = tabs.findIndex((tab) => tab.layout.panes.some((pane) => pane.session?.id === primaryId));
-        if (holder >= 0) {
-          targetIndex = holder;
+      if (primaryProjectId && tabs[activeIndex].projectId !== primaryProjectId) {
+        const existing = tabs.findIndex((tab) => tab.projectId === primaryProjectId);
+        if (existing >= 0) {
+          targetIndex = existing;
+        } else if (tabs[activeIndex].projectId === null) {
+          tabs[activeIndex] = { ...tabs[activeIndex], projectId: primaryProjectId };
+        } else {
+          tabs.push({ projectId: primaryProjectId, label: selectedProject?.displayName ?? '', layout: createLayout() });
+          targetIndex = tabs.length - 1;
         }
       }
-      if (targetIndex === activeIndex && primaryProjectId && tabs[activeIndex].projectId !== primaryProjectId) {
-        const openSessionHere = primaryId && tabs[activeIndex].layout.panes.some((pane) => pane.session?.id === primaryId);
-        if (!openSessionHere) {
-          if (tabs[activeIndex].projectId === null) {
-            // A tab nobody has claimed yet (first run) becomes this project's.
-            tabs[activeIndex] = { ...tabs[activeIndex], projectId: primaryProjectId };
-          } else {
-            const existing = tabs.findIndex((tab) => tab.projectId === primaryProjectId);
-            if (existing >= 0) {
-              targetIndex = existing;
-            } else {
-              tabs.push({ projectId: primaryProjectId, label: selectedProject?.displayName ?? '', layout: createLayout() });
-              targetIndex = tabs.length - 1;
-            }
-          }
-        }
+      // A copy of this session left in another tab (opened there before the
+      // project was known) is dropped, so it is shown in one place only.
+      if (primaryId) {
+        tabs.forEach((tab, index) => {
+          if (index === targetIndex || !tab.layout.panes.some((pane) => pane.session?.id === primaryId)) return;
+          tabs[index] = {
+            ...tab,
+            layout: {
+              ...tab.layout,
+              panes: tab.layout.panes.map((pane) => (pane.session?.id === primaryId ? { ...pane, session: null } : pane)),
+            },
+          };
+        });
       }
 
       const switched = targetIndex !== activeIndex;
