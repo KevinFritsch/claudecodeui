@@ -445,13 +445,21 @@ export function useSplitLayout({
   //     sidebar asked for that ("Open beside", Alt+click).
   useEffect(() => {
     const primaryId = selectedSession?.id ?? null;
-    const primaryProjectId = selectedProject?.projectId ?? null;
+    // The session's own project wins: on a sidebar click the router updates
+    // the session first and the selected project a moment later, and going by
+    // the stale project put the session into the wrong tab.
+    const sessionProjectId = typeof selectedSession?.__projectId === 'string' && selectedSession.__projectId
+      ? selectedSession.__projectId
+      : null;
+    const primaryProjectId = sessionProjectId ?? selectedProject?.projectId ?? null;
+    const projectMatches = Boolean(selectedProject && selectedProject.projectId === primaryProjectId);
     const previousPrimaryId = previousPrimaryIdRef.current;
     const navigationChanged = primaryId !== previousPrimaryId
       || primaryProjectId !== previousPrimaryProjectIdRef.current;
     previousPrimaryIdRef.current = primaryId;
     previousPrimaryProjectIdRef.current = primaryProjectId;
-    const primaryProject = stripProjectSessions(selectedProject);
+    // Only trust the selected project's object when it is the session's project.
+    const primaryProject = projectMatches ? stripProjectSessions(selectedProject) : null;
     // Read outside the updater: a hint applies to this navigation only.
     const placement = navigationChanged ? consumeSessionPlacement() : null;
 
@@ -479,8 +487,10 @@ export function useSplitLayout({
 
       const tabs = [...previous.tabs];
       const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.projectId === previous.activeProjectId));
+      // Only a tab that was already empty (an unused New Session) is ever pruned.
+      const activeWasEmpty = !tabs[activeIndex].layout.panes.some((pane) => pane.session);
       const withLabel = (tab: WorkspaceTab): WorkspaceTab => (
-        tab.projectId && tab.projectId === primaryProjectId && selectedProject?.displayName && tab.label !== selectedProject.displayName
+        tab.projectId && tab.projectId === primaryProjectId && projectMatches && selectedProject?.displayName && tab.label !== selectedProject.displayName
           ? { ...tab, label: selectedProject.displayName }
           : tab
       );
@@ -504,7 +514,7 @@ export function useSplitLayout({
         } else if (tabs[activeIndex].projectId === null) {
           tabs[activeIndex] = { ...tabs[activeIndex], projectId: primaryProjectId };
         } else {
-          tabs.push({ projectId: primaryProjectId, label: selectedProject?.displayName ?? '', layout: createLayout() });
+          tabs.push({ projectId: primaryProjectId, label: projectMatches ? selectedProject?.displayName ?? '' : '', layout: createLayout() });
           targetIndex = tabs.length - 1;
         }
       }
@@ -529,7 +539,7 @@ export function useSplitLayout({
         layout: applyToLayout(tabs[targetIndex].layout, placement === 'beside' && !switched),
       });
       // A tab left behind with no session in it (an unused New Session) goes away.
-      const pruned = switched && !tabs[activeIndex].layout.panes.some((pane) => pane.session)
+      const pruned = switched && activeWasEmpty && !tabs[activeIndex].layout.panes.some((pane) => pane.session)
         ? tabs.filter((_, index) => index !== activeIndex)
         : tabs;
       return {
@@ -750,7 +760,9 @@ export function useSplitLayout({
     return {
       paneId: pane.paneId,
       session: usesPrimary ? selectedSession : pane.session,
-      project: usesPrimary ? selectedProject : pane.project,
+      project: usesPrimary && (!pane.project || !selectedSession || selectedProject?.projectId === (selectedSession.__projectId ?? selectedProject?.projectId))
+        ? selectedProject
+        : pane.project,
       cells: pane.cells,
       tab: pane.tab,
       isFocused,

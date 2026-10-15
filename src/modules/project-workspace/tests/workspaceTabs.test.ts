@@ -143,3 +143,21 @@ test('open beside with a session of another project opens it in that project tab
   assert.equal(tabOf(result), 'Kvn');
   assert.deepEqual(ids(result.current.panes), ['k1']);
 });
+
+test('a sidebar click that updates the session before the project keeps both tabs', () => {
+  const { result, rerender } = renderWorkspace({ project: KVN, session: K1, trigger: 0 });
+  rerender({ project: GOLFN, session: G1, trigger: 0 });
+  act(() => result.current.selectTab('kvn'));
+  rerender({ project: KVN, session: K1, trigger: 0 });
+  assert.equal(tabOf(result), 'Kvn');
+
+  // The router switches the session first, the project a render later.
+  rerender({ project: KVN, session: G2, trigger: 0 });
+  rerender({ project: GOLFN, session: G2, trigger: 0 });
+
+  assert.deepEqual(result.current.tabs.map((tab) => tab.label).sort(), ['GolfN', 'Kvn'], 'the Kvn tab survives');
+  assert.equal(tabOf(result), 'GolfN');
+  assert.deepEqual(ids(result.current.panes), ['g2']);
+  act(() => result.current.selectTab('kvn'));
+  assert.deepEqual(ids(result.current.panes), ['k1'], 'and still holds its session');
+});
