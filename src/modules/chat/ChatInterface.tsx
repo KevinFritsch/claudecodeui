@@ -232,6 +232,8 @@ function ChatInterface({
     openAttachmentPicker,
     attachFiles,
     handleSubmit,
+    backgroundSendPrompt,
+    resolveBackgroundSendPrompt,
     queuedDraft,
     editQueuedDraft,
     deleteQueuedDraft,
@@ -626,6 +628,8 @@ function ChatInterface({
           onSubmit={handleSubmit}
           isDragActive={isDragActive}
           queuedDraft={queuedDraft}
+          backgroundSendPrompt={backgroundSendPrompt}
+          onResolveBackgroundSendPrompt={resolveBackgroundSendPrompt}
           onEditQueuedDraft={editQueuedDraft}
           onDeleteQueuedDraft={deleteQueuedDraft}
           onSendQueuedDraftNow={sendQueuedDraftNow}
