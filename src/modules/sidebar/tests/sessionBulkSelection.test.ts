@@ -587,23 +587,26 @@ test('an empty selection opens no confirmation', () => {
   assert.equal(result.current.pendingDeletion, null);
 });
 
-test('opening a project leaves the other open projects open', () => {
+test('projects start open, and each collapses on its own, remembered across reloads', () => {
+  localStorage.removeItem('cloudcli:collapsed-projects');
   const { result } = renderController();
-
-  act(() => {
-    result.current.toggleProject('project-1');
-  });
-  act(() => {
-    result.current.toggleProject('project-2');
-  });
-  assert.equal(result.current.isProjectExpanded('project-1'), true, 'the first stays open');
+  assert.equal(result.current.isProjectExpanded('project-1'), true, 'open on landing');
   assert.equal(result.current.isProjectExpanded('project-2'), true);
 
   act(() => {
     result.current.toggleProject('project-1');
   });
-  assert.equal(result.current.isProjectExpanded('project-1'), false, 'and each still closes on its own');
+  assert.equal(result.current.isProjectExpanded('project-1'), false, 'collapses on its own');
   assert.equal(result.current.isProjectExpanded('project-2'), true);
+
+  const { result: reloaded } = renderController();
+  assert.equal(reloaded.current.isProjectExpanded('project-1'), false, 'the collapse survives a reload');
+
+  act(() => {
+    reloaded.current.toggleProject('project-1');
+  });
+  assert.equal(reloaded.current.isProjectExpanded('project-1'), true);
+  localStorage.removeItem('cloudcli:collapsed-projects');
 });
 
 test('the bin archives a session at once, without the archive-or-delete dialog', async () => {

@@ -62,6 +62,25 @@ type UseSidebarControllerArgs = {
   sidebarVisible: boolean;
 };
 
+const COLLAPSED_PROJECTS_STORAGE_KEY = 'cloudcli:collapsed-projects';
+
+function readCollapsedProjects(): Set<string> {
+  try {
+    const stored = JSON.parse(localStorage.getItem(COLLAPSED_PROJECTS_STORAGE_KEY) ?? '[]') as unknown;
+    return new Set(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsedProjects(projectIds: Set<string>): void {
+  try {
+    localStorage.setItem(COLLAPSED_PROJECTS_STORAGE_KEY, JSON.stringify([...projectIds]));
+  } catch {
+    // Storage full or blocked: the collapse just won't survive a reload.
+  }
+}
+
 export function useSidebarController({
   projects,
   selectedProject,
@@ -82,7 +101,9 @@ export function useSidebarController({
   sidebarVisible,
 }: UseSidebarControllerArgs) {
   const paletteOps = usePaletteOps();
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  // Projects start expanded so their sessions show on landing; only the ones
+  // the user collapses are tracked, and remembered across reloads.
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(readCollapsedProjects);
   // Running groups start expanded and remember manual collapses independently of Projects.
   const [collapsedRunningProjects, setCollapsedRunningProjects] = useState<Set<string>>(new Set());
   // The one rename the sidebar has open, as a single value so a project and a
@@ -157,12 +178,13 @@ export function useSidebarController({
       return;
     }
 
-    setExpandedProjects((prev) => {
-      if (prev.has(selectedProjectId)) {
+    setCollapsedProjects((prev) => {
+      if (!prev.has(selectedProjectId)) {
         return prev;
       }
       const next = new Set(prev);
-      next.add(selectedProjectId);
+      next.delete(selectedProjectId);
+      writeCollapsedProjects(next);
       return next;
     });
   }, [selectedProject?.projectId]);
@@ -565,11 +587,12 @@ export function useSidebarController({
 
       // Each project opens and closes on its own; opening one leaves the
       // others as they were.
-      setExpandedProjects((prev) => {
+      setCollapsedProjects((prev) => {
         const next = new Set(prev);
         if (!next.delete(projectId)) {
           next.add(projectId);
         }
+        writeCollapsedProjects(next);
         return next;
       });
     },
@@ -580,8 +603,8 @@ export function useSidebarController({
     (projectId: string) =>
       searchMode === 'running'
         ? !collapsedRunningProjects.has(projectId)
-        : expandedProjects.has(projectId),
-    [collapsedRunningProjects, expandedProjects, searchMode],
+        : !collapsedProjects.has(projectId),
+    [collapsedRunningProjects, collapsedProjects, searchMode],
   );
 
   const handleSessionClick = useCallback(
