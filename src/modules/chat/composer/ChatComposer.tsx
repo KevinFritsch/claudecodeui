@@ -10,7 +10,7 @@ import type {
   RefObject,
   TouchEvent,
 } from 'react';
-import { PaperclipIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
+import { PaperclipIcon, ImageIcon, MessageSquareIcon, XIcon, Loader2, ArrowUpIcon, PencilIcon } from 'lucide-react';
 
 import { useVoiceInput } from '@/modules/chat/hooks/useVoiceInput';
 import { useVoiceAvailable } from '@/modules/chat/hooks/useVoiceAvailable';
@@ -100,6 +100,8 @@ type ChatComposerProps = {
   getRootProps: (...args: unknown[]) => Record<string, unknown>;
   getInputProps: (...args: unknown[]) => Record<string, unknown>;
   openAttachmentPicker: () => void;
+  /** Adds picked files to the composer's attachments (same checks as drop and paste). */
+  onAttachFiles: (files: File[]) => void;
   inputHighlightRef: RefObject<HTMLDivElement>;
   renderInputWithMentions: (text: string) => ReactNode;
   textareaRef: RefObject<HTMLTextAreaElement>;
@@ -175,6 +177,7 @@ export default function ChatComposer({
   getRootProps,
   getInputProps,
   openAttachmentPicker,
+  onAttachFiles,
   inputHighlightRef,
   renderInputWithMentions,
   textareaRef,
@@ -193,6 +196,7 @@ export default function ChatComposer({
   sendByCtrlEnter,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const fileDropdownRef = useRef<HTMLDivElement | null>(null);
   const selectedFileRef = useRef<HTMLDivElement | null>(null);
   const commandMenuPosition = useMemo(() => {
@@ -412,6 +416,21 @@ export default function ChatComposer({
           )}
 
           <input {...getInputProps()} />
+          {/* Images only, single pick: on a phone this opens the photo gallery
+              (latest screenshot first), so one tap on the photo attaches it. */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              event.target.value = '';
+              if (files.length > 0) onAttachFiles(files);
+            }}
+          />
 
           <PromptInputBody>
             <div ref={inputHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
@@ -444,6 +463,16 @@ export default function ChatComposer({
               aria-label={t('input.attachFiles')}
             >
               <PaperclipIcon />
+            </PromptInputButton>
+
+            {/* Touch screens only: desktop has paste and drag-and-drop. */}
+            <PromptInputButton
+              tooltip={{ content: t('input.attachPhoto', 'Add a photo or screenshot') }}
+              onClick={() => photoInputRef.current?.click()}
+              aria-label={t('input.attachPhoto', 'Add a photo or screenshot')}
+              className="hidden [@media(pointer:coarse)]:inline-flex"
+            >
+              <ImageIcon />
             </PromptInputButton>
 
             {onVoiceTranscript && voiceAvailable && (

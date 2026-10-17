@@ -1397,6 +1397,7 @@ export function useChatComposerState({
     getInputProps,
     isDragActive,
     openAttachmentPicker: open,
+    attachFiles: handleAttachmentFiles,
     handleSubmit,
     queuedDraft,
     editQueuedDraft,
