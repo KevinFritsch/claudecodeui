@@ -426,12 +426,13 @@ export default function ChatComposer({
           )}
 
           <input {...getInputProps()} />
-          {/* Images only, single pick: on a phone this opens the photo gallery
-              (latest screenshot first), so one tap on the photo attaches it. */}
+          {/* Images only: on a phone this opens the photo gallery (latest
+              screenshot first). Several can be picked; the composer keeps up to 10. */}
           <input
             ref={photoInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
             tabIndex={-1}
             aria-hidden
