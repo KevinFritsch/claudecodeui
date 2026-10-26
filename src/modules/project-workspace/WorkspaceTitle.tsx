@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { LLMProviderLogo } from '@/shared/ui';
 import type { AppTab, Project, ProjectSession } from '@/shared/types';
 import { usePlugins } from '@/modules/plugins';
-import { getSessionTitle } from '@/shared/utils';
+import { getSessionTitle, sessionColor, withAlpha } from '@/shared/utils';
 import { useSessionTitleRename } from '@/modules/project-workspace/hooks/useSessionTitleRename';
 
 type WorkspaceTitleProps = {
@@ -81,7 +81,19 @@ export default function WorkspaceTitle({
     <div className="scrollbar-hide flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
       {showSessionIcon && (
         <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
-          <LLMProviderLogo provider={selectedSession?.__provider} className="h-4 w-4" />
+          {/* Claude sessions show their own colour, as in the sidebar and pane headers. */}
+          {selectedSession && (selectedSession.__provider ?? 'claude') === 'claude' ? (
+            <span
+              className="h-3 w-3 rounded-full"
+              style={{
+                backgroundColor: sessionColor(selectedSession.id),
+                boxShadow: `0 0 0 3px ${withAlpha(sessionColor(selectedSession.id), 0.25)}`,
+              }}
+              aria-hidden
+            />
+          ) : (
+            <LLMProviderLogo provider={selectedSession?.__provider} className="h-4 w-4" />
+          )}
         </div>
       )}
 

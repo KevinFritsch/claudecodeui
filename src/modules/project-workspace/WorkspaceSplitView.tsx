@@ -3,7 +3,7 @@ import type { CSSProperties, DragEvent, ReactNode } from 'react';
 import { Folder, GitBranch, MessageSquare, MessageSquarePlus, Terminal, X } from 'lucide-react';
 
 import { LLMProviderLogo } from '@/shared/ui';
-import { cn, withAlpha } from '@/shared/utils';
+import { cn, sessionColor, withAlpha } from '@/shared/utils';
 import { useProjectColors } from '@/shared/hooks/useProjectColors';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { ResolvedSplitPane, SessionDragPayload, SplitDropTarget, SplitPaneTab } from '@/shared/types';
@@ -210,6 +210,8 @@ export default function WorkspaceSplitView({
             ? getProjectColor(pane.project.projectId, pane.project.displayName)
             : null;
           const isHighlighted = isSplit && pane.isFocused && projectColor;
+          // The pane's own session colour: its dot, and the strip along the top of the header.
+          const paneSessionColor = pane.session ? sessionColor(pane.session.id) : null;
           return (
             <div
               key={pane.paneId}
@@ -234,16 +236,23 @@ export default function WorkspaceSplitView({
                     pane.isFocused ? 'text-foreground' : 'bg-muted/30 text-muted-foreground',
                     pane.isFocused && !projectColor && 'bg-primary/5',
                   )}
-                  style={isHighlighted ? {
-                    backgroundColor: withAlpha(projectColor, 0.1),
-                    boxShadow: `inset 0 2px 0 ${projectColor}`,
-                  } : undefined}
+                  style={{
+                    ...(isHighlighted ? { backgroundColor: withAlpha(projectColor, 0.1) } : {}),
+                    ...(paneSessionColor
+                      ? { boxShadow: `inset 0 2px 0 ${pane.isFocused ? paneSessionColor : withAlpha(paneSessionColor, 0.5)}` }
+                      : isHighlighted ? { boxShadow: `inset 0 2px 0 ${projectColor}` } : {}),
+                  }}
                 >
-                  {pane.session && (
-                    <LLMProviderLogo
-                      provider={pane.session.__provider ?? 'claude'}
-                      className="h-3 w-3 flex-shrink-0"
-                    />
+                  {pane.session && paneSessionColor && (
+                    (pane.session.__provider ?? 'claude') === 'claude' ? (
+                      <span
+                        className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                        style={{ backgroundColor: paneSessionColor, boxShadow: `0 0 0 2px ${withAlpha(paneSessionColor, 0.25)}` }}
+                        aria-hidden
+                      />
+                    ) : (
+                      <LLMProviderLogo provider={pane.session.__provider} className="h-3 w-3 flex-shrink-0" />
+                    )
                   )}
                   <span className="min-w-0 flex-1 truncate font-medium" title={paneTitle(pane)}>
                     {hasChat ? paneTitle(pane) : 'Empty'}

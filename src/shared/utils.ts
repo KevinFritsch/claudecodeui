@@ -296,6 +296,27 @@ export function colorFromText(text: string): string {
   return hslToHex(hash % 360, 65, 60);
 }
 
+// Twelve hues far enough apart to tell sessions apart at a glance; a
+// continuous hue put neighbours like yellow and lime side by side.
+const SESSION_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#84cc16', '#10b981', '#06b6d4',
+  '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#14b8a6',
+];
+
+/**
+ * A session's own colour, derived from its id so it never changes; used by the
+ * sidebar rows, the workspace title and the split-view pane headers so one
+ * session looks the same everywhere. FNV-1a spreads ids evenly over the palette.
+ */
+export function sessionColor(sessionId: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < sessionId.length; index += 1) {
+    hash ^= sessionId.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return SESSION_COLORS[hash % SESSION_COLORS.length];
+}
+
 /** `#rrggbb` plus an opacity, as an `rgba()` string; used by the sidebar and split view to tint backgrounds and borders with a project colour. */
 export function withAlpha(hexColor: string, alpha: number): string {
   const value = Number.parseInt(hexColor.slice(1), 16);

@@ -3,7 +3,7 @@ import type { DragEvent, MouseEvent } from 'react';
 import type { TFunction } from 'i18next';
 
 import { Button, LLMProviderLogo, Tooltip } from '@/shared/ui';
-import { cn, withAlpha } from '@/shared/utils';
+import { cn, sessionColor, withAlpha } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { ProjectSession, RecentConversationListItem, SessionDragPayload, SessionRowActions } from '@/shared/types';
 import { formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
@@ -191,7 +191,18 @@ export default function SidebarRecentConversations({
                   'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
                   isSelected ? 'bg-primary/10' : 'bg-muted/60',
                 )}>
-                  <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5" />
+                  {conversation.provider === 'claude' ? (
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{
+                        backgroundColor: sessionColor(conversation.sessionId),
+                        boxShadow: `0 0 0 3px ${withAlpha(sessionColor(conversation.sessionId), 0.2)}`,
+                      }}
+                      aria-hidden
+                    />
+                  ) : (
+                    <LLMProviderLogo provider={conversation.provider} className="h-3.5 w-3.5" />
+                  )}
                 </span>
 
                 <span className="min-w-0 flex-1">

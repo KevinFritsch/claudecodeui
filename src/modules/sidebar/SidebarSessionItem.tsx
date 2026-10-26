@@ -4,7 +4,7 @@ import { Check, CheckSquare, Edit2, Loader2, MoreHorizontal, Pencil, Square, Tra
 import type { TFunction } from 'i18next';
 
 import { Badge, Dialog, DialogContent, DialogTitle, LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
-import { cn, withAlpha } from '@/shared/utils';
+import { cn, sessionColor as sessionColorFor, withAlpha } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
@@ -12,23 +12,6 @@ import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
 import { requestSessionPlacement } from '@/shared/sessionPlacement';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
-
-// Twelve hues far enough apart to tell sessions apart at a glance; a
-// continuous hue put neighbours like yellow and lime side by side.
-const SESSION_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#84cc16', '#10b981', '#06b6d4',
-  '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#14b8a6',
-];
-
-function sessionColorFor(sessionId: string): string {
-  // FNV-1a over the id: stable per session, spread evenly over the palette.
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < sessionId.length; index += 1) {
-    hash ^= sessionId.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return SESSION_COLORS[hash % SESSION_COLORS.length];
-}
 
 type SidebarSessionItemProps = {
   project: Project;
@@ -177,22 +160,41 @@ function SidebarSessionItem({
   // memory hook. Claude rows show just the dot; other providers keep their logo.
   const sessionColor = sessionColorFor(session.id);
   const isClaude = !session.__provider || session.__provider === 'claude';
+  // Status rides on the session's dot (bottom-right pip) instead of hanging
+  // off the row edge: amber needs attention, purple background work, green
+  // recently active.
+  const statusPip = (showAttentionIndicator || showBackgroundIndicator || showRecentIndicator) ? (
+    <Tooltip content={indicatorLabel} position="right">
+      <span
+        role="status"
+        aria-label={indicatorLabel}
+        className={cn(
+          'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-background',
+          showAttentionIndicator
+            ? 'animate-pulse bg-amber-500'
+            : showBackgroundIndicator
+              ? 'animate-pulse bg-purple-500 dark:bg-purple-400'
+              : 'bg-green-500',
+        )}
+      />
+    </Tooltip>
+  ) : null;
   const sessionMarker = (
-    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center" aria-hidden>
+    <span className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
       {isClaude ? (
         <span
           className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: sessionColor, boxShadow: `0 0 0 3px ${withAlpha(sessionColor, 0.18)}` }}
+          style={{ backgroundColor: sessionColor, boxShadow: `0 0 0 3px ${withAlpha(sessionColor, isSelected ? 0.35 : 0.18)}` }}
+          aria-hidden
         />
       ) : (
         <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ backgroundColor: withAlpha(sessionColor, 0.2) }}>
           <LLMProviderLogo provider={session.__provider} className="h-3 w-3" />
         </span>
       )}
+      {statusPip}
     </span>
   );
-  // The selected row carries a thin bar in its session colour.
-  const selectedStyle = isSelected ? { boxShadow: `inset 2px 0 0 ${sessionColor}` } : undefined;
 
   const startMobileRename = () => {
     onStartEditingSession(project.projectId, session.id, sessionView.sessionName);
@@ -205,24 +207,6 @@ function SidebarSessionItem({
 
   return (
     <div className="group relative">
-      {(showAttentionIndicator || showBackgroundIndicator || showRecentIndicator) && (
-        <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
-          <Tooltip content={indicatorLabel} position="right">
-            <div
-              role="status"
-              aria-label={indicatorLabel}
-              className={cn(
-                'h-2 w-2 animate-pulse rounded-full',
-                showAttentionIndicator
-                  ? 'bg-amber-500'
-                  : showBackgroundIndicator
-                    ? 'bg-purple-500 dark:bg-purple-400'
-                    : 'bg-green-500',
-              )}
-            />
-          </Tooltip>
-        </div>
-      )}
 
       {isCompact && (
       <div>
@@ -236,7 +220,6 @@ function SidebarSessionItem({
             isSelected && 'bg-accent',
             isChecked && 'bg-primary/10',
           )}
-          style={selectedStyle}
           onClick={isSelecting ? (isSelectable ? toggleSelected : undefined) : selectMobileSession}
           onKeyDown={isSelecting ? handleSelectionKeyDown : undefined}
         >
@@ -478,7 +461,6 @@ function SidebarSessionItem({
             isSelected ? 'bg-accent hover:bg-accent' : 'hover:bg-accent/50',
             isChecked && 'bg-primary/10',
           )}
-          style={selectedStyle}
           // Left-click keeps in-app navigation; Ctrl/Cmd/middle-click and the
           // native right-click menu use the href to open a new tab/window.
           // While selecting, every click ticks the row instead.
