@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 
 import MobileMenuButton from '@/modules/project-workspace/MobileMenuButton';
 
@@ -14,6 +16,17 @@ export default function WorkspaceStateView({ mode, isMobile, onMenuClick }: Work
   const { t } = useTranslation();
 
   const isLoading = mode === 'loading';
+  const { pathname } = useLocation();
+
+  // On a phone the empty state is just a dead end: open the sidebar so a
+  // session can be picked straight away. Not on a /session/ URL, where the
+  // session is still being resolved and its chat is about to show.
+  const opensMenu = mode === 'empty' && isMobile && !pathname.startsWith('/session/');
+  useEffect(() => {
+    if (opensMenu) onMenuClick();
+    // Once per arrival on the empty state; closing the menu here keeps it closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opensMenu]);
 
   return (
     <div className="flex h-full flex-col">
