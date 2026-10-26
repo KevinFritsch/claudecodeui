@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check, Columns2, Edit2, GitBranch, MoreHorizontal, Trash2, X } from 'lucide-react';
+import { Check, Columns2, Edit2, GitBranch, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { ActionMenu } from '@/shared/ui';
@@ -118,7 +118,7 @@ export default function SessionOptions({
               }
             }}
             onClick={(event) => event.stopPropagation()}
-            className="w-32 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-32 min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             autoFocus
           />
           <button
@@ -157,6 +157,22 @@ export default function SessionOptions({
             className="touch:opacity-100 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all duration-150 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
           >
             <Columns2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {/* Quick rename; same hover rule as the archive bin. */}
+        {projectId !== null && (
+          <button
+            type="button"
+            aria-label={`Rename ${sessionName}`}
+            title="Rename session (or double-click the name)"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onStartEditingSession(projectId, sessionId, sessionName);
+            }}
+            className="touch:opacity-100 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all duration-150 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
         {/* One-click archive; shown on hover (always on touch) so idle rows stay calm. */}

@@ -1,10 +1,10 @@
 import { memo, useState } from 'react';
 import type { DragEvent, KeyboardEvent } from 'react';
-import { Check, CheckSquare, Edit2, Loader2, MoreHorizontal, Square, Trash2, X } from 'lucide-react';
+import { Check, CheckSquare, Edit2, Loader2, MoreHorizontal, Pencil, Square, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
 import { Badge, Dialog, DialogContent, DialogTitle, LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
-import { cn } from '@/shared/utils';
+import { cn, withAlpha } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
@@ -12,6 +12,23 @@ import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
 import { requestSessionPlacement } from '@/shared/sessionPlacement';
 import { useProviderSessionIdCopy } from '@/modules/sidebar/hooks/useProviderSessionIdCopy';
 import SessionOptions from '@/modules/sidebar/SessionOptions';
+
+// Twelve hues far enough apart to tell sessions apart at a glance; a
+// continuous hue put neighbours like yellow and lime side by side.
+const SESSION_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#84cc16', '#10b981', '#06b6d4',
+  '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#14b8a6',
+];
+
+function sessionColorFor(sessionId: string): string {
+  // FNV-1a over the id: stable per session, spread evenly over the palette.
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < sessionId.length; index += 1) {
+    hash ^= sessionId.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return SESSION_COLORS[hash % SESSION_COLORS.length];
+}
 
 type SidebarSessionItemProps = {
   project: Project;
@@ -156,6 +173,27 @@ function SidebarSessionItem({
     }
   };
 
+  // Each session gets its own colour (from its id, so it never changes) as a
+  // memory hook. Claude rows show just the dot; other providers keep their logo.
+  const sessionColor = sessionColorFor(session.id);
+  const isClaude = !session.__provider || session.__provider === 'claude';
+  const sessionMarker = (
+    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center" aria-hidden>
+      {isClaude ? (
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ backgroundColor: sessionColor, boxShadow: `0 0 0 3px ${withAlpha(sessionColor, 0.18)}` }}
+        />
+      ) : (
+        <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ backgroundColor: withAlpha(sessionColor, 0.2) }}>
+          <LLMProviderLogo provider={session.__provider} className="h-3 w-3" />
+        </span>
+      )}
+    </span>
+  );
+  // The selected row carries a thin bar in its session colour.
+  const selectedStyle = isSelected ? { boxShadow: `inset 2px 0 0 ${sessionColor}` } : undefined;
+
   const startMobileRename = () => {
     onStartEditingSession(project.projectId, session.id, sessionView.sessionName);
   };
@@ -194,28 +232,17 @@ function SidebarSessionItem({
           aria-disabled={isSelecting && !isSelectable ? true : undefined}
           tabIndex={isSelecting ? 0 : undefined}
           className={cn(
-            'p-2 mx-3 my-0.5 rounded-md bg-card border active:scale-[0.98] transition-all duration-150 relative',
-            isSelected ? 'bg-primary/5 border-primary/20' : '',
-            !isSelected && isProcessing
-              ? 'border-border/60 bg-muted/20'
-              : !isSelected && sessionView.isActive
-              ? 'border-green-500/30 bg-green-50/5 dark:bg-green-900/5'
-              : 'border-border/30',
-            isChecked && 'border-primary/40 bg-primary/10',
+            'relative mx-2 rounded-xl px-2 py-2 transition-colors duration-150 active:bg-accent/60',
+            isSelected && 'bg-accent',
+            isChecked && 'bg-primary/10',
           )}
+          style={selectedStyle}
           onClick={isSelecting ? (isSelectable ? toggleSelected : undefined) : selectMobileSession}
           onKeyDown={isSelecting ? handleSelectionKeyDown : undefined}
         >
           <div className="flex items-center gap-2">
             {selectionIcon}
-            <div
-              className={cn(
-                'w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0',
-                isSelected ? 'bg-primary/10' : 'bg-muted/50',
-              )}
-            >
-              <LLMProviderLogo provider={session.__provider} className="h-3 w-3" />
-            </div>
+            {sessionMarker}
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -225,7 +252,7 @@ function SidebarSessionItem({
                 >
                   {sessionView.sessionName}
                 </div>
-                {isProcessing ? (
+                {isProcessing && (
                   <span className="ml-auto flex-shrink-0">
                     <Tooltip content={t('tooltips.processingSessionIndicator', 'Processing session')} position="top">
                       <span className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground">
@@ -233,14 +260,15 @@ function SidebarSessionItem({
                       </span>
                     </Tooltip>
                   </span>
-                ) : compactSessionAge && (
-                  <span className="ml-auto flex-shrink-0 text-[11px] text-muted-foreground">{compactSessionAge}</span>
                 )}
               </div>
-              {(showTopic || sessionView.messageCount > 0) && (
-                <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+              {/* On a phone the title gets the whole first line; age and topic share the second. */}
+              {(showTopic || sessionView.messageCount > 0 || (compactSessionAge && !isProcessing)) && (
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  {compactSessionAge && !isProcessing && <span className="flex-shrink-0 tabular-nums">{compactSessionAge}</span>}
+                  {compactSessionAge && !isProcessing && showTopic && <span className="flex-shrink-0 text-muted-foreground/40">·</span>}
                   {showTopic && (
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={topic}>
+                    <span className="min-w-0 flex-1 truncate" title={topic}>
                       {topic}
                     </span>
                   )}
@@ -253,12 +281,28 @@ function SidebarSessionItem({
               )}
             </div>
 
+            {!isSelecting && (
+              <button
+                type="button"
+                aria-label={`Rename ${sessionView.sessionName}`}
+                title="Rename session"
+                className="flex h-8 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  startMobileRename();
+                  setMobileOptionsOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+
             {!isSelecting && !isProcessing && (
               <button
                 type="button"
                 aria-label={`Archive ${sessionView.sessionName}`}
                 title="Archive session"
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500 active:scale-95"
+                className="flex h-8 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500 active:scale-95"
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeleteSession(session.id, sessionView.sessionName, { immediate: true });
@@ -274,7 +318,7 @@ function SidebarSessionItem({
                 aria-label={`Session options for ${sessionView.sessionName}`}
                 aria-haspopup="dialog"
                 aria-expanded={isMobileOptionsOpen}
-                className="ml-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted active:scale-95"
+                className="flex h-8 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted active:scale-95"
                 onClick={(event) => {
                   event.stopPropagation();
                   setMobileOptionsOpen(true);
@@ -428,17 +472,13 @@ function SidebarSessionItem({
           aria-disabled={isSelecting && !isSelectable ? true : undefined}
           className={cn(
             buttonVariants({ variant: 'ghost' }),
-            'h-auto w-full justify-start rounded-md border bg-card p-2 text-left font-normal transition-all duration-150',
-            // Room for ⋯, and on hover for the bin next to it.
-            isSelecting ? 'pr-2' : 'pr-11 group-hover:pr-24',
-            isSelected ? 'border-primary/20 bg-primary/5' : 'border-border/30',
-            !isSelected && isProcessing
-              ? 'border-border/60 bg-muted/20 hover:bg-muted/25'
-              : !isSelected && sessionView.isActive
-                ? 'border-green-500/30 bg-green-50/5 hover:bg-green-50/10 dark:bg-green-900/5 dark:hover:bg-green-900/10'
-                : 'hover:bg-accent/50',
-            isChecked && 'border-primary/40 bg-primary/10',
+            'h-auto w-full justify-start rounded-lg px-2 py-1.5 text-left font-normal transition-colors duration-150',
+            // Room for ⋯, and on hover for the quick actions next to it.
+            isSelecting ? 'pr-2' : 'pr-10 group-hover:pr-[7.75rem]',
+            isSelected ? 'bg-accent hover:bg-accent' : 'hover:bg-accent/50',
+            isChecked && 'bg-primary/10',
           )}
+          style={selectedStyle}
           // Left-click keeps in-app navigation; Ctrl/Cmd/middle-click and the
           // native right-click menu use the href to open a new tab/window.
           // While selecting, every click ticks the row instead.
@@ -465,19 +505,18 @@ function SidebarSessionItem({
         >
           <div className="flex w-full min-w-0 items-center gap-2">
             {selectionIcon}
-            <div
-              className={cn(
-                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md',
-                isSelected ? 'bg-primary/10' : 'bg-muted/50',
-              )}
-            >
-              <LLMProviderLogo provider={session.__provider} className="h-3 w-3" />
-            </div>
-            <div className="min-w-0 flex-1">
+            {sessionMarker}
+            {/* Hidden, not removed, while renaming so the row keeps its height under the field. */}
+            <div className={cn('min-w-0 flex-1', isEditing && 'invisible')}>
               <div className="flex items-center gap-2">
                 <div
-                  className="min-w-0 flex-1 truncate text-sm font-normal text-foreground"
-                  title={sessionView.sessionName}
+                  className={cn('min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground', isSelected ? 'font-medium' : 'font-normal')}
+                  title={`${sessionView.sessionName} (double-click to rename)`}
+                  onDoubleClick={(event) => {
+                    if (isSelecting) return;
+                    event.preventDefault();
+                    onStartEditingSession(project.projectId, session.id, sessionView.sessionName);
+                  }}
                 >
                   {sessionView.sessionName}
                 </div>
@@ -521,7 +560,11 @@ function SidebarSessionItem({
 
         {!isSelecting && (
           <SessionOptions
-            className="absolute right-2 top-1/2 -translate-y-1/2 transform transition-all duration-200"
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2 transform transition-all duration-200',
+              // The rename field takes the row, next to the session dot.
+              isEditing ? 'left-8 right-1.5 rounded-md bg-background' : 'right-1.5',
+            )}
             sessionId={session.id}
             sessionName={sessionView.sessionName}
             provider={session.__provider}

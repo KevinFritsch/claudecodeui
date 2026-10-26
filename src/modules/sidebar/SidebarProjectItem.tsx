@@ -111,9 +111,7 @@ function SidebarProjectItem({
   // Project identity is tracked by the DB-assigned `projectId` everywhere
   // after the projectName → projectId migration.
   const isSelected = selectedProject?.projectId === project.projectId;
-  const totalSessionCount = Number(project.sessionMeta?.total ?? sessions.length);
   const sessionCountDisplay = getSessionCountDisplay(project, sessions);
-  const sessionCountLabel = `${sessionCountDisplay} session${totalSessionCount === 1 ? '' : 's'}`;
   const taskStatus = getTaskIndicatorStatus(project, mcpServerStatus);
   const mobileRenameInputRef = useRef<HTMLInputElement>(null);
 
@@ -165,8 +163,8 @@ function SidebarProjectItem({
         <div className="bg-background">
           <div
             className={cn(
-              'p-3 mx-3 my-1 rounded-lg bg-card border border-border/50 active:scale-[0.98] transition-all duration-150',
-              isSelected && 'bg-primary/5 border-primary/20',
+              'mx-2 my-0.5 rounded-xl px-2.5 py-2 transition-colors duration-150 active:bg-accent/60',
+              isSelected && 'bg-accent/60',
             )}
             onClick={toggleProject}
           >
@@ -212,7 +210,12 @@ function SidebarProjectItem({
                   ) : (
                     <>
                       <div className="flex min-w-0 flex-1 items-center justify-between">
-                        <h3 className="truncate text-sm font-normal text-foreground">{project.displayName}</h3>
+                        <h3 className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm font-medium text-foreground">{project.displayName}</span>
+                          <span className="flex-shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums leading-4 text-muted-foreground">
+                            {sessionCountDisplay}
+                          </span>
+                        </h3>
                         {tasksEnabled && (
                           <TaskIndicator
                             status={taskStatus}
@@ -221,7 +224,6 @@ function SidebarProjectItem({
                           />
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground">{sessionCountLabel}</p>
                     </>
                   )}
                 </div>
@@ -267,23 +269,25 @@ function SidebarProjectItem({
                       />
                     </button>
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-500/10 active:scale-90 dark:border-red-800 dark:bg-red-900/30"
+                      aria-label={`Delete ${project.displayName}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground active:scale-90 active:bg-red-500/10 active:text-red-500"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteProject(project);
                       }}
                     >
-                      <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
 
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 active:scale-90 dark:border-primary/30 dark:bg-primary/20"
+                      aria-label={`Rename ${project.displayName}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground active:scale-90 active:bg-accent"
                       onClick={(event) => {
                         event.stopPropagation();
                         onStartEditingProject(project);
                       }}
                     >
-                      <Edit3 className="h-4 w-4 text-primary" />
+                      <Edit3 className="h-4 w-4" />
                     </button>
 
                     <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/30">
@@ -305,8 +309,8 @@ function SidebarProjectItem({
         <Button
           variant="ghost"
           className={cn(
-            'sticky top-0 z-10 flex w-full justify-between p-2 h-auto font-normal hover:bg-accent/50',
-            isSelected ? 'bg-accent text-accent-foreground' : 'bg-background',
+            'sticky top-0 z-10 flex h-auto w-full justify-between rounded-lg px-2 py-1.5 font-normal hover:bg-accent/50',
+            isSelected ? 'bg-accent/70 text-accent-foreground' : 'bg-background',
           )}
           onClick={selectAndToggleProject}
         >
@@ -343,19 +347,12 @@ function SidebarProjectItem({
                   </div>
                 </div>
               ) : (
-                <div>
-                  <div className="truncate text-sm font-normal text-foreground" title={project.displayName}>
-                    {project.displayName}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
+                // One line: name and session count; the folder is in the tooltip.
+                <div className="flex min-w-0 items-center gap-2" title={`${project.displayName} · ${project.fullPath}`}>
+                  <span className="truncate text-sm font-medium text-foreground">{project.displayName}</span>
+                  <span className="flex-shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums leading-4 text-muted-foreground">
                     {sessionCountDisplay}
-                    {project.fullPath !== project.displayName && (
-                      <span className="ml-1 opacity-60" title={project.fullPath}>
-                        {' - '}
-                        {project.fullPath.length > 25 ? `...${project.fullPath.slice(-22)}` : project.fullPath}
-                      </span>
-                    )}
-                  </div>
+                  </span>
                 </div>
               )}
             </div>
