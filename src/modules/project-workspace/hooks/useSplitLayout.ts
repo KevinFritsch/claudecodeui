@@ -460,6 +460,9 @@ export function useSplitLayout({
     previousPrimaryProjectIdRef.current = primaryProjectId;
     // Only trust the selected project's object when it is the session's project.
     const primaryProject = projectMatches ? stripProjectSessions(selectedProject) : null;
+    // Nothing selected at all (the app just opened at its root, before the
+    // last session is restored): leave every tab as it was saved.
+    if (!primaryId && !primaryProjectId) return;
     // Read outside the updater: a hint applies to this navigation only.
     const placement = navigationChanged ? consumeSessionPlacement() : null;
 
@@ -549,6 +552,45 @@ export function useSplitLayout({
       };
     });
   }, [selectedProject, selectedSession]);
+
+  // Opening the app at its root brings back the session that had focus last
+  // time, so the saved tabs and splits are ready to use. Checked first: a
+  // session deleted since then is cleared instead of opened.
+  const restoreAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
+    if (selectedSession || window.location.pathname !== '/') return;
+    const layout = stateRef.current;
+    const pane = layout.panes.find((candidate) => candidate.paneId === layout.focusedPaneId && candidate.session)
+      ?? layout.panes.find((candidate) => candidate.session);
+    const sessionId = pane?.session?.id;
+    if (!pane || !sessionId) return;
+    let cancelled = false;
+    void (async () => {
+      let exists = false;
+      try {
+        exists = (await api.sessionDetails(sessionId)).ok;
+      } catch {
+        return; // Offline or server restarting: keep the layout, try again next time.
+      }
+      if (cancelled || window.location.pathname !== '/') return;
+      if (!exists) {
+        setState((previous) => ({
+          ...previous,
+          panes: previous.panes.map((candidate) => (candidate.session?.id === sessionId ? { ...candidate, session: null } : candidate)),
+        }));
+        return;
+      }
+      setState((previous) => ({ ...previous, focusedPaneId: pane.paneId, pendingSessionId: sessionId }));
+      onNavigateToSession(sessionId, { replace: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Once, on first mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // New Session resets only the focused pane of the active tab. Done inside
   // the state update so it lands on the pane chosen by the sync effect above
@@ -755,8 +797,11 @@ export function useSplitLayout({
   const panes: ResolvedSplitPane[] = visiblePanes.map((pane) => {
     const isFocused = pane.paneId === state.focusedPaneId;
     // The focused pane shows the router's live session objects, except while
-    // a pane click is still waiting for the router to switch sessions.
-    const usesPrimary = isFocused && (!state.pendingSessionId || selectedSession?.id === state.pendingSessionId);
+    // a pane click is still waiting for the router to switch sessions, or
+    // while nothing is selected yet (the app just opened and is restoring).
+    const usesPrimary = isFocused
+      && Boolean(selectedSession || selectedProject)
+      && (!state.pendingSessionId || selectedSession?.id === state.pendingSessionId);
     return {
       paneId: pane.paneId,
       session: usesPrimary ? selectedSession : pane.session,

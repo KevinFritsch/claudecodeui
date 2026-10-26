@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, test } from 'vitest';
+import { beforeEach, test, vi } from 'vitest';
 
 import { useSplitLayout } from '@/modules/project-workspace/hooks/useSplitLayout';
+import { api } from '@/shared/api';
 import { requestSessionPlacement } from '@/shared/sessionPlacement';
 import type { Project, ProjectSession } from '@/shared/types';
 
@@ -160,4 +161,36 @@ test('a sidebar click that updates the session before the project keeps both tab
   assert.deepEqual(ids(result.current.panes), ['g2']);
   act(() => result.current.selectTab('kvn'));
   assert.deepEqual(ids(result.current.panes), ['k1'], 'and still holds its session');
+});
+
+test('reopening the app keeps the saved tabs and splits and brings back the focused session', async () => {
+  const first = renderWorkspace({ project: GOLFN, session: G1, trigger: 0 });
+  openGolfnSplit(first.rerender);
+  first.rerender({ project: KVN, session: K1, trigger: 0 });
+  first.rerender({ project: GOLFN, session: G2, trigger: 0 });
+  first.unmount();
+
+  // A new browser tab on the app's root: nothing is selected yet.
+  const sessionDetails = vi.spyOn(api, 'sessionDetails').mockResolvedValue(new Response('{}', { status: 200 }));
+  const reopened = renderWorkspace({ project: null, session: null, trigger: 0 });
+  assert.deepEqual(reopened.result.current.tabs.map((tab) => tab.label), ['GolfN', 'Kvn'], 'both tabs are back');
+  assert.deepEqual(ids(reopened.result.current.panes), ['g1', 'g2'], 'with the split untouched');
+  await vi.waitFor(() => assert.deepEqual(reopened.navigations, ['g2']));
+  assert.deepEqual(sessionDetails.mock.calls[0], ['g2'], 'the focused session is checked, then opened');
+
+  reopened.rerender({ project: GOLFN, session: G2, trigger: 0 });
+  assert.deepEqual(ids(reopened.result.current.panes), ['g1', 'g2']);
+  sessionDetails.mockRestore();
+});
+
+test('a saved session that no longer exists is cleared instead of opened', async () => {
+  const first = renderWorkspace({ project: GOLFN, session: G1, trigger: 0 });
+  openGolfnSplit(first.rerender);
+  first.unmount();
+
+  const sessionDetails = vi.spyOn(api, 'sessionDetails').mockResolvedValue(new Response('{}', { status: 404 }));
+  const reopened = renderWorkspace({ project: null, session: null, trigger: 0 });
+  await vi.waitFor(() => assert.deepEqual(ids(reopened.result.current.panes), ['g1', null]));
+  assert.deepEqual(reopened.navigations, []);
+  sessionDetails.mockRestore();
 });
