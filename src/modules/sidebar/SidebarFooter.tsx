@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Settings, ArrowUpCircle, Gauge, AlertTriangle } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
-import { UsageModal } from '@/modules/usage';
+import { ClaudeSessionUsageBadge, UsageModal, useClaudeSessionUsage } from '@/modules/usage';
 import { IS_PLATFORM } from '@/shared/utils';
 import type { ReleaseInfo } from '@/shared/types';
 
@@ -30,6 +30,8 @@ export default function SidebarFooter({
 }: SidebarFooterProps) {
   // Whether the Claude plan usage dialog is open.
   const [isUsageOpen, setIsUsageOpen] = useState(false);
+  // Claude's current-session usage, shown beside "View Usage" (refreshed each minute).
+  const sessionUsage = useClaudeSessionUsage();
 
   return (
     <div className="flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
@@ -108,6 +110,7 @@ export default function SidebarFooter({
         >
           <Gauge className="h-3.5 w-3.5" />
           <span className="text-sm">{t('actions.viewUsage', { defaultValue: 'View Usage' })}</span>
+          <ClaudeSessionUsageBadge usage={sessionUsage} className="ml-auto" />
         </button>
       </div>
 
@@ -139,6 +142,7 @@ export default function SidebarFooter({
             <Gauge className="h-4 w-4 text-muted-foreground" />
           </div>
           <span className="text-sm font-normal text-foreground">{t('actions.viewUsage', { defaultValue: 'View Usage' })}</span>
+          <ClaudeSessionUsageBadge usage={sessionUsage} className="ml-auto text-xs" />
         </button>
       </div>
 

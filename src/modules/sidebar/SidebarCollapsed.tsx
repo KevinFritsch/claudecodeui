@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Settings, Sparkles, PanelLeftOpen, Gauge, AlertTriangle } from 'lucide-react';
 import type { TFunction } from 'i18next';
 
-import { UsageModal } from '@/modules/usage';
+import { ClaudeSessionUsageBadge, UsageModal, useClaudeSessionUsage } from '@/modules/usage';
 
 type SidebarCollapsedProps = {
   onExpand: () => void;
@@ -24,6 +24,7 @@ export default function SidebarCollapsed({
 }: SidebarCollapsedProps) {
   // Whether the Claude plan usage dialog is open.
   const [isUsageOpen, setIsUsageOpen] = useState(false);
+  const sessionUsage = useClaudeSessionUsage();
 
   return (
     <div className="flex h-full w-12 flex-col items-center gap-1 bg-background/80 py-3 backdrop-blur-sm">
@@ -52,11 +53,12 @@ export default function SidebarCollapsed({
       {/* Usage */}
       <button
         onClick={() => setIsUsageOpen(true)}
-        className="group flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
+        className="group flex min-h-8 w-10 flex-col items-center justify-center gap-0.5 rounded-lg py-1 transition-colors hover:bg-accent/80"
         aria-label={t('actions.viewUsage', { defaultValue: 'View Usage' })}
         title={t('actions.viewUsage', { defaultValue: 'View Usage' })}
       >
         <Gauge className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
+        <ClaudeSessionUsageBadge usage={sessionUsage} compact className="text-[10px]" />
       </button>
 
       {/* Restart-required indicator */}
