@@ -4,7 +4,7 @@ import { Check, CheckSquare, Edit2, Loader2, MoreHorizontal, Pencil, Square, Tra
 import type { TFunction } from 'i18next';
 
 import { Badge, Dialog, DialogContent, DialogTitle, LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
-import { cn, sessionColor as sessionColorFor, withAlpha } from '@/shared/utils';
+import { cn } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
@@ -156,11 +156,7 @@ function SidebarSessionItem({
     }
   };
 
-  // Each session gets its own colour (from its id, so it never changes) as a
-  // memory hook. Claude rows show just the dot; other providers keep their logo.
-  const sessionColor = sessionColorFor(session.id);
-  const isClaude = !session.__provider || session.__provider === 'claude';
-  // Status rides on the session's dot (bottom-right pip) instead of hanging
+  // Status rides on the provider logo (bottom-right pip) instead of hanging
   // off the row edge: amber needs attention, purple background work, green
   // recently active.
   const statusPip = (showAttentionIndicator || showBackgroundIndicator || showRecentIndicator) ? (
@@ -181,17 +177,7 @@ function SidebarSessionItem({
   ) : null;
   const sessionMarker = (
     <span className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
-      {isClaude ? (
-        <span
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: sessionColor, boxShadow: `0 0 0 3px ${withAlpha(sessionColor, isSelected ? 0.35 : 0.18)}` }}
-          aria-hidden
-        />
-      ) : (
-        <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ backgroundColor: withAlpha(sessionColor, 0.2) }}>
-          <LLMProviderLogo provider={session.__provider} className="h-3 w-3" />
-        </span>
-      )}
+      <LLMProviderLogo provider={session.__provider} className="h-3.5 w-3.5" />
       {statusPip}
     </span>
   );
