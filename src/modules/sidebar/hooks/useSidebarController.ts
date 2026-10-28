@@ -60,6 +60,11 @@ type UseSidebarControllerArgs = {
   setCurrentProject: (project: Project) => void;
   setSidebarVisible: (visible: boolean) => void;
   sidebarVisible: boolean;
+  /**
+   * Upstream's opt-in "remember expanded projects". Accepted but unused: here
+   * every project starts expanded and only collapses are remembered.
+   */
+  keepProjectsExpanded?: boolean;
 };
 
 const COLLAPSED_PROJECTS_STORAGE_KEY = 'cloudcli:collapsed-projects';
@@ -146,6 +151,11 @@ export function useSidebarController({
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [optimisticStarByProjectId, setOptimisticStarByProjectId] = useState<Map<string, boolean>>(new Map());
   const [loadingMoreProjects, setLoadingMoreProjects] = useState<Set<string>>(new Set());
+  // The projects whose next session page is being fetched; `loadingMoreProjects`
+  // only mirrors it for the button. A ref, because the click handler has to know
+  // at once whether a load is running, and a flag set inside a state updater is
+  // not set yet when read back: React may hold the updater until the next render.
+  const projectIdsLoadingMoreSessionsRef = useRef<Set<string>>(new Set());
   const searchSeqRef = useRef(0);
   const recentConversationsSeqRef = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -696,21 +706,18 @@ export function useSidebarController({
       return;
     }
 
-    let shouldLoad = false;
-    setLoadingMoreProjects((previous) => {
-      if (previous.has(projectId)) {
-        return previous;
-      }
+    // A second click before the button re-renders as disabled would fetch the
+    // same page again.
+    if (projectIdsLoadingMoreSessionsRef.current.has(projectId)) {
+      return;
+    }
 
-      shouldLoad = true;
+    projectIdsLoadingMoreSessionsRef.current.add(projectId);
+    setLoadingMoreProjects((previous) => {
       const next = new Set(previous);
       next.add(projectId);
       return next;
     });
-
-    if (!shouldLoad) {
-      return;
-    }
 
     try {
       await onLoadMoreSessions(projectId);
@@ -718,6 +725,7 @@ export function useSidebarController({
       console.error('[Sidebar] Failed to load more sessions:', error);
       alert(t('messages.refreshError'));
     } finally {
+      projectIdsLoadingMoreSessionsRef.current.delete(projectId);
       setLoadingMoreProjects((previous) => {
         const next = new Set(previous);
         next.delete(projectId);
