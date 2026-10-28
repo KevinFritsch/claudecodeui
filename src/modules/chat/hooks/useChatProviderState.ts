@@ -37,6 +37,16 @@ const FALLBACK_DEFAULT_MODEL: Record<LLMProvider, string> = {
 
 const PROVIDERS: LLMProvider[] = ['claude', 'cursor', 'codex', 'opencode'];
 
+/**
+ * Providers whose model and effort picks belong to the session they were made
+ * in. A new chat always starts on these values instead of inheriting whatever
+ * the last session used (picking Fable in one chat must not make the next one
+ * Fable too). Other providers keep the remembered per-provider default.
+ */
+const NEW_CHAT_DEFAULTS: Partial<Record<LLMProvider, { model: string; effort: string }>> = {
+  claude: { model: 'claude-opus-5-5', effort: DEFAULT_EFFORT_VALUE },
+};
+
 /** localStorage key holding the user's default model for one provider. */
 const providerModelStorageKey = (provider: LLMProvider): string => `${provider}-model`;
 
@@ -136,14 +146,17 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
   // that validates them arrives asynchronously per provider.
   const [providerModels, setProviderModels] = useState<Record<LLMProvider, string>>(() => {
     return PROVIDERS.reduce<Record<LLMProvider, string>>((acc, targetProvider) => {
-      acc[targetProvider] = localStorage.getItem(providerModelStorageKey(targetProvider))
+      acc[targetProvider] = NEW_CHAT_DEFAULTS[targetProvider]?.model
+        || localStorage.getItem(providerModelStorageKey(targetProvider))
         || FALLBACK_DEFAULT_MODEL[targetProvider];
       return acc;
     }, {} as Record<LLMProvider, string>);
   });
   const [providerEfforts, setProviderEfforts] = useState<Partial<Record<LLMProvider, string>>>(() => {
     return PROVIDERS.reduce<Partial<Record<LLMProvider, string>>>((acc, targetProvider) => {
-      acc[targetProvider] = localStorage.getItem(`${targetProvider}-effort`) || DEFAULT_EFFORT_VALUE;
+      acc[targetProvider] = NEW_CHAT_DEFAULTS[targetProvider]?.effort
+        || localStorage.getItem(`${targetProvider}-effort`)
+        || DEFAULT_EFFORT_VALUE;
       return acc;
     }, {});
   });
@@ -175,7 +188,9 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
         ? previous
         : { ...previous, [targetProvider]: model }
     ));
-    localStorage.setItem(providerModelStorageKey(targetProvider), model);
+    if (!NEW_CHAT_DEFAULTS[targetProvider]) {
+      localStorage.setItem(providerModelStorageKey(targetProvider), model);
+    }
   }, []);
 
   const setStoredProviderEffort = useCallback((targetProvider: LLMProvider, effort: string) => {
@@ -184,7 +199,9 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
         ? previous
         : { ...previous, [targetProvider]: effort }
     ));
-    localStorage.setItem(`${targetProvider}-effort`, effort);
+    if (!NEW_CHAT_DEFAULTS[targetProvider]) {
+      localStorage.setItem(`${targetProvider}-effort`, effort);
+    }
   }, []);
 
   const loadProviderModels = useCallback(async () => {
@@ -358,12 +375,17 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
 
       const storageKey = providerModelStorageKey(targetProvider);
       const currentModel = providerModels[targetProvider];
-      const nextModel = pickStoredOrCurrent(storageKey, currentModel, catalog);
+      // Session-scoped providers keep nothing in storage: only check the pick
+      // is still in the catalog (a stored value would undo every new-chat pick).
+      const isSessionScoped = Boolean(NEW_CHAT_DEFAULTS[targetProvider]);
+      const nextModel = isSessionScoped
+        ? (catalog.OPTIONS.some((option) => option.value === currentModel) ? currentModel : catalog.DEFAULT)
+        : pickStoredOrCurrent(storageKey, currentModel, catalog);
 
       if (nextModel !== currentModel) {
         reconciledModels[targetProvider] = nextModel;
       }
-      if (localStorage.getItem(storageKey) !== nextModel) {
+      if (!isSessionScoped && localStorage.getItem(storageKey) !== nextModel) {
         localStorage.setItem(storageKey, nextModel);
       }
     }
@@ -479,6 +501,10 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     : null;
   const selectedSessionKeyRef = useRef<string | null>(selectedSessionKey);
   selectedSessionKeyRef.current = selectedSessionKey;
+  // Whether a session is on screen. In a fresh new chat the composer can still
+  // hand over the previous session's id, so "new chat" is decided from this.
+  const hasSelectedSessionRef = useRef(Boolean(selectedSessionId));
+  hasSelectedSessionRef.current = Boolean(selectedSessionId);
 
   const activeSessionSelection = sessionSelection
     && selectedSessionId
@@ -544,21 +570,48 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     };
   }, [selectedSessionId, selectedSessionProvider]);
 
+  // Starting a new chat (no session selected) puts session-scoped providers
+  // back on their new-chat defaults.
+  useEffect(() => {
+    if (selectedSessionId) return;
+    setProviderModels((previous) => {
+      let next = previous;
+      for (const [target, defaults] of Object.entries(NEW_CHAT_DEFAULTS) as Array<[LLMProvider, { model: string }]>) {
+        if (next[target] !== defaults.model) next = { ...next, [target]: defaults.model };
+      }
+      return next;
+    });
+    setProviderEfforts((previous) => {
+      let next = previous;
+      for (const [target, defaults] of Object.entries(NEW_CHAT_DEFAULTS) as Array<[LLMProvider, { effort: string }]>) {
+        if (next[target] !== defaults.effort) next = { ...next, [target]: defaults.effort };
+      }
+      return next;
+    });
+  }, [selectedSessionId]);
+
   /**
    * Applies a model choice.
    *
-   * The pick always becomes the per-provider default so the next new chat
-   * inherits it, and — when a session is open — is also recorded against that
-   * session so reopening it later restores this model.
+   * When a session is open the pick is recorded against it, so reopening it
+   * restores this model. For providers in NEW_CHAT_DEFAULTS that is all: the
+   * next new chat starts on the default again. Other providers also keep the
+   * pick as their per-provider default.
    */
   const selectProviderModel = useCallback(async (
     targetProvider: LLMProvider,
     model: string,
     sessionId?: string | null,
   ) => {
-    setStoredProviderModel(targetProvider, model);
-
-    const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    const isSessionScoped = Boolean(NEW_CHAT_DEFAULTS[targetProvider]);
+    const normalizedSessionId = isSessionScoped && !hasSelectedSessionRef.current
+      ? ''
+      : typeof sessionId === 'string' ? sessionId.trim() : '';
+    // Session-scoped providers record a pick on the open session only; the
+    // new-chat value changes only when the pick is made in a new chat.
+    if (!normalizedSessionId || !isSessionScoped) {
+      setStoredProviderModel(targetProvider, model);
+    }
     if (!normalizedSessionId) {
       return { scope: 'default' as const, model };
     }
@@ -608,9 +661,13 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     effort: string,
     sessionId?: string | null,
   ) => {
-    setStoredProviderEffort(targetProvider, effort);
-
-    const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    const isSessionScoped = Boolean(NEW_CHAT_DEFAULTS[targetProvider]);
+    const normalizedSessionId = isSessionScoped && !hasSelectedSessionRef.current
+      ? ''
+      : typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!normalizedSessionId || !isSessionScoped) {
+      setStoredProviderEffort(targetProvider, effort);
+    }
     if (!normalizedSessionId) {
       return { scope: 'default' as const, effort };
     }

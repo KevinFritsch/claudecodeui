@@ -292,7 +292,8 @@ test('turning the flag on moves the composer off a built-in that is no longer li
     ['claude-sonnet-4-6', 'claude-haiku-4-5'],
   );
   await waitFor(() => assert.equal(result.current.currentProviderModel, 'claude-sonnet-4-6'));
-  assert.equal(localStorage.getItem('claude-model'), 'claude-sonnet-4-6');
+  // Claude's model is per session, so nothing is remembered in storage.
+  assert.equal(localStorage.getItem('claude-model'), 'default');
 });
 
 test('a rejected toggle surfaces the server error and leaves the catalog alone', async () => {

@@ -520,10 +520,14 @@ export default function ChatComposer({
           </PromptInputTools>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <ScheduleMessagePopover
-              disabled={!input.trim()}
-              onSchedule={onScheduleMessage}
-            />
+            {/* Disabled until there is text; on a phone it only takes room the
+                quick model switch needs, so it appears once something is typed. */}
+            <span className={input.trim() ? 'contents' : 'hidden sm:contents'}>
+              <ScheduleMessagePopover
+                disabled={!input.trim()}
+                onSchedule={onScheduleMessage}
+              />
+            </span>
 
             <ComposerModelMenu
               effort={effort}

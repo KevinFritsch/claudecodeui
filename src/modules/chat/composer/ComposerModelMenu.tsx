@@ -26,6 +26,13 @@ type ComposerModelMenuProps = {
 
 type PickerItem = { value: string; label: string; description?: string };
 
+/** One-tap model switches, shown when the provider's catalog has them (Claude). */
+const QUICK_MODELS = [
+  { value: 'claude-opus-5-5', short: 'Opus' },
+  { value: 'claude-fable-5-1', short: 'Fable' },
+  { value: 'claude-sonnet-5-5', short: 'Sonnet' },
+];
+
 /** One trigger button and its popover list: one click opens it, one click picks. */
 function ComposerPicker({
   ariaLabel,
@@ -133,15 +140,52 @@ function ComposerModelMenu({
   const effortLabel = effort === DEFAULT_EFFORT_VALUE ? defaultEffortLabel : effort;
 
   const hasModelPicker = modelOptions.length > 0 || modelsLoading;
+  const quickModels = QUICK_MODELS.filter((quick) => modelOptions.some((option) => option.value === quick.value));
+  const showQuickModels = quickModels.length >= 2;
+  const isQuickModelSelected = showQuickModels && quickModels.some((quick) => quick.value === model);
   const hasEffortPicker = effortItems.length > 0;
 
   return (
     <>
+      {showQuickModels && (
+        <div
+          role="radiogroup"
+          aria-label={t('composer.quickModels', { defaultValue: 'Quick model switch' })}
+          className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5"
+        >
+          {quickModels.map((quick) => {
+            const option = modelOptions.find((candidate) => candidate.value === quick.value);
+            const isActive = quick.value === model;
+            return (
+              <button
+                key={quick.value}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                title={option?.label || quick.short}
+                onClick={() => {
+                  if (!isActive) onSelectModel(quick.value);
+                }}
+                className={
+                  isActive
+                    ? 'h-7 rounded-md bg-background px-1.5 text-xs font-semibold sm:px-2 text-foreground shadow-sm ring-1 ring-border/60'
+                    : 'h-7 rounded-md px-1.5 text-xs font-medium sm:px-2 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground'
+                }
+              >
+                {quick.short}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {hasModelPicker && (
         <ComposerPicker
           ariaLabel={t('composer.modelPicker', { defaultValue: 'Select model' })}
           heading={t('composer.model', { defaultValue: 'Model' })}
-          triggerContent={<span className="truncate">{modelLabel}</span>}
+          // With a quick switch active the dropdown is just the way to the other models.
+          triggerContent={isQuickModelSelected
+            ? <span className="sr-only">{t('composer.otherModels', { defaultValue: 'Other models' })}</span>
+            : <span className="truncate">{modelLabel}</span>}
           items={modelItems}
           selectedValue={model}
           onSelect={onSelectModel}

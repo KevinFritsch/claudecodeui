@@ -39,12 +39,13 @@ vi.mock('@/shared/api', () => ({
   },
 }));
 
-const renderProviderState = async () => {
+const renderProviderState = async (selectedSession: { id: string; __provider: 'claude' } | null = null) => {
   const { useChatProviderState } = await import(
     '@/modules/chat/hooks/useChatProviderState'
   );
-  return renderHook(() =>
-    useChatProviderState({ selectedSession: null, selectedProject: null }),
+  return renderHook(
+    ({ session }) => useChatProviderState({ selectedSession: session as never, selectedProject: null }),
+    { initialProps: { session: selectedSession } },
   );
 };
 
@@ -67,8 +68,10 @@ test('each provider gets its own model from its own storage key', async () => {
 
   const { result } = await renderProviderState();
 
+  // Claude is session-scoped: a new chat starts on Opus 5.5, never on the
+  // last model picked anywhere (see NEW_CHAT_DEFAULTS).
   await waitFor(() => {
-    assert.equal(result.current.providerModels.claude, 'claude-stored');
+    assert.equal(result.current.providerModels.claude, 'claude-opus-5-5');
   });
   assert.equal(result.current.providerModels.cursor, 'cursor-stored');
   assert.equal(result.current.providerModels.codex, 'codex-stored');
@@ -145,4 +148,22 @@ test('the active provider’s model is what currentProviderModel reports', async
     assert.equal(result.current.provider, 'cursor');
   });
   assert.equal(result.current.currentProviderModel, 'cursor-active');
+});
+
+test('a Claude pick inside a session stays with that session, not the next new chat', async () => {
+  const { result, rerender } = await renderProviderState({ id: 'session-1', __provider: 'claude' });
+  await waitFor(() => assert.equal(result.current.providerModels.claude, 'claude-opus-5-5'));
+
+  await act(async () => {
+    await result.current.selectProviderModel('claude', 'claude-fable-5-1', 'session-1');
+  });
+  assert.equal(result.current.providerModels.claude, 'claude-opus-5-5', 'the new-chat model is untouched');
+  assert.equal(localStorage.getItem('claude-model'), null, 'and nothing is remembered for later');
+
+  // New chat: a pick applies to it, even if the composer still passes the old session id.
+  rerender({ session: null });
+  await act(async () => {
+    await result.current.selectProviderModel('claude', 'claude-sonnet-5-5', 'session-1');
+  });
+  assert.equal(result.current.providerModels.claude, 'claude-sonnet-5-5');
 });

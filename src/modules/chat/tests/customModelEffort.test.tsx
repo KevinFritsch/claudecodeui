@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, test, vi } from 'vitest';
 
 import '@/modules/i18n';
@@ -194,12 +194,15 @@ test('providers without effort support show no effort levels and send none', asy
 });
 
 test('the composer offers exactly the declared levels for a selected custom model', async () => {
-  localStorage.setItem('claude-model', 'my-custom-model');
   const { useChatProviderState } = await import('@/modules/chat/hooks/useChatProviderState');
   const { result } = renderHook(() => useChatProviderState({ selectedSession: null, selectedProject: null }));
 
   await waitFor(() => assert.equal(result.current.providerModelsLoading, false));
   assert.equal(result.current.provider, 'claude');
+  // Claude picks are not read back from storage; pick it in this new chat.
+  await act(async () => {
+    await result.current.selectProviderModel('claude', 'my-custom-model', null);
+  });
   assert.equal(result.current.currentProviderModel, 'my-custom-model');
   assert.deepEqual(result.current.currentProviderEffortOptions, [{ value: 'low' }, { value: 'high' }]);
 });
