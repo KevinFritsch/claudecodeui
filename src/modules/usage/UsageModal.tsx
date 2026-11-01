@@ -174,7 +174,10 @@ export function UsageModal({ isOpen, onClose }: UsageModalProps) {
       setUsage(payload.data as PlanUsage);
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      // fetch() rejects with a TypeError ("Failed to fetch") when no answer came back at all.
+      setError(loadError instanceof TypeError
+        ? 'Could not reach the server. Check the connection and try again.'
+        : loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       setIsLoading(false);
     }

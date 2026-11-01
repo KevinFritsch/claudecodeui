@@ -4,6 +4,7 @@ import {
   storeAuthToken,
 } from '@/shared/authToken';
 import { IS_PLATFORM } from '@/shared/utils';
+import { reportSignInRequired, SIGN_IN_REQUIRED_HEADER } from '@/shared/signInRequired';
 import { readVoiceConfig, voiceConfigHeaders } from '@/shared/voiceConfig';
 
 // Headers are a plain record rather than the full `HeadersInit` union so the
@@ -53,6 +54,11 @@ export const authenticatedFetch = (
     // header alone says nothing about the current request.
     if (response.status === 401 && response.headers.get('X-Auth-Error')) {
       expireAuthSession();
+    }
+    // The proxy login (Authelia) expired: not this app's session, so it is not
+    // ended here; the user is asked to sign in again instead.
+    if (response.status === 401 && response.headers.get(SIGN_IN_REQUIRED_HEADER)) {
+      reportSignInRequired();
     }
     return response;
   });

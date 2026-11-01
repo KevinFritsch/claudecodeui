@@ -3,7 +3,7 @@ import { I18nextProvider } from 'react-i18next';
 
 import { ThemeProvider } from '@/shared/context/ThemeContext';
 import { UiPreferencesProvider } from '@/shared/context/UiPreferencesContext';
-import { AuthProvider, ProtectedRoute } from '@/modules/auth';
+import { AuthProvider, ProtectedRoute, SignInExpiredBanner } from '@/modules/auth';
 import { TaskMasterProvider,TasksSettingsProvider } from '@/modules/task-master';
 import { WebSocketProvider } from '@/shared/context/WebSocketContext';
 import { PluginsProvider } from '@/modules/plugins';
@@ -114,6 +114,7 @@ export default function App() {
       <ThemeProvider>
         <UiPreferencesProvider>
         <AuthProvider>
+          <SignInExpiredBanner />
           <WebSocketProvider>
             <PluginsProvider>
               <TasksSettingsProvider>
