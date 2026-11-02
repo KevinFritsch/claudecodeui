@@ -49,6 +49,7 @@ import {
     scheduledMessagesRoutes,
 } from './modules/scheduled-messages/index.js';
 import { closeSessionTopics, initializeSessionTopics } from './modules/session-topics/index.js';
+import { closeSessionWarmup, initializeSessionWarmup, sessionWarmupRoutes } from './modules/session-warmup/index.js';
 import browserUseRoutes from './modules/browser-use/browser-use.routes.js';
 import { assetsRoutes } from './modules/assets/index.js';
 import { fileTreeRoutes } from './modules/file-tree/index.js';
@@ -199,6 +200,7 @@ app.use('/api/browser-use', authenticateToken, browserUseRoutes);
 // Unified provider MCP routes (protected)
 app.use('/api/providers', authenticateToken, providerRoutes);
 app.use('/api/scheduled-messages', authenticateToken, scheduledMessagesRoutes);
+app.use('/api/session-warmup', authenticateToken, sessionWarmupRoutes);
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
@@ -388,6 +390,8 @@ async function startServer() {
             initializeScheduledMessageDispatcher(providerRuntimeService);
             // Keeps each session's short "current subject" line fresh after its runs.
             initializeSessionTopics();
+            // Opens the 5-hour Claude session window early on the days the user chose.
+            initializeSessionWarmup();
 
             // Start server-side plugin processes for enabled plugins
             startEnabledPluginServers().catch(err => {
@@ -398,6 +402,7 @@ async function startServer() {
         await closeSessionsWatcher();
         closeScheduledMessageDispatcher();
         closeSessionTopics();
+        closeSessionWarmup();
         // Clean up plugin processes on shutdown
         const shutdownRuntimeServices = async () => {
             try {

@@ -301,6 +301,19 @@ export const api = {
   workflowAgentActivity: (sessionId: string, runId: string, agentId: string) =>
     get(`/api/providers/sessions/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(runId)}/agents/${encodeURIComponent(agentId)}`),
 
+  // Session warm-up: a scheduled tiny ping that opens the 5-hour Claude session window early.
+  sessionWarmup: {
+    get: () => get('/api/session-warmup'),
+    save: (config: {
+      enabled: boolean;
+      days: number[];
+      time: string;
+      timeZone: string;
+      model: string;
+    }) => put('/api/session-warmup', config),
+    runNow: () => post('/api/session-warmup/run'),
+  },
+
   // Scheduled messages: send a message to a session at a future time.
   scheduledMessages: {
     list: (sessionId?: string) =>

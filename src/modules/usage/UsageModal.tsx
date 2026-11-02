@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 
 import { api } from '@/shared/api';
 import { Dialog, DialogContent, DialogTitle } from '@/shared/ui';
+import { SessionWarmupSettings } from '@/modules/usage/SessionWarmupSettings';
 import { cn } from '@/shared/utils';
 
 type PlanUsageLimit = {
@@ -242,6 +243,8 @@ export function UsageModal({ isOpen, onClose }: UsageModalProps) {
             <p className="text-[11px] text-muted-foreground/70">Updated {formatClock(usage.fetchedAt)}</p>
           </div>
         )}
+
+        <SessionWarmupSettings isOpen={isOpen} onSessionStarted={() => void loadUsage(true)} />
 
         {codexUsage?.connected && (
           <div className="mt-4 space-y-4 border-t border-border/60 pt-4">

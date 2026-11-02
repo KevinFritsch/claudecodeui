@@ -16,3 +16,6 @@ export { reapOrphanedOpenCodeServers } from './list/opencode/opencode-runtime.pr
 
 export { initializeSessionsWatcher } from './services/sessions-watcher.service.js';
 export { closeSessionsWatcher } from './services/sessions-watcher.service.js';
+
+// claudePlanUsageService: used by Session Warm-up to skip its ping when a session window is already running, and to report the window it opened.
+export { claudePlanUsageService } from './services/claude-plan-usage.service.js';
