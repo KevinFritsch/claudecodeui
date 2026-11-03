@@ -11,7 +11,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { api } from '@/shared/api';
 import type { LLMProvider, NormalizedMessage } from '@/shared/types';
-import { removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
+import { isLiveUserTurnAlreadyEchoed, removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
 import {
   hasReachedCachedTailTimeBoundary,
   mergeLatestServerPage,
@@ -750,6 +750,16 @@ export function useSessionStore() {
 
   const appendRealtime = useCallback((sessionId: string, msg: NormalizedMessage) => {
     const slot = getSlot(sessionId);
+    if (msg.id.startsWith('live_user_')) {
+      // A replay can deliver it again, and the tab that sent it already shows
+      // its own echo of the same turn.
+      if (
+        slot.realtimeMessages.some((message) => message.id === msg.id)
+        || isLiveUserTurnAlreadyEchoed(msg, slot.realtimeMessages)
+      ) {
+        return;
+      }
+    }
     const normalizedMessage =
       msg.sessionId === sessionId
         ? msg

@@ -118,7 +118,10 @@ export function useChatRealtimeHandlers({
       // Record replay progress for every sequenced live event.
       if (sid && typeof msg.seq === 'number') {
         const known = lastSeqRef.current.get(sid) ?? 0;
-        if (msg.seq > known) {
+        // Every run numbers its events from 1. A tab that stays open across
+        // runs would otherwise keep the last run's count and, reconnecting,
+        // ask for a replay past everything this run has sent so far.
+        if (msg.seq > known || msg.seq === 1) {
           lastSeqRef.current.set(sid, msg.seq);
         }
       }

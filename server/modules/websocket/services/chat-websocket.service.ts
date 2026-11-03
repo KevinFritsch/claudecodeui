@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import type { WebSocket } from 'ws';
@@ -19,7 +20,7 @@ import type {
   ProviderPermissionDecision,
   ProviderRuntimeWriter,
 } from '@/shared/types.js';
-import { parseIncomingJsonObject } from '@/shared/utils.js';
+import { createNormalizedMessage, parseIncomingJsonObject } from '@/shared/utils.js';
 
 /**
  * Trust boundary for client-supplied image attachments: chat.send options come
@@ -210,6 +211,38 @@ function resolveSendTarget(
  * `extraRuntimeOptions` is how an edited message asks the provider to resume
  * partway instead of continuing from the tip; a normal send passes nothing.
  */
+/**
+ * Sockets that have subscribed to each session, so a run started without them
+ * (a queued or scheduled turn, a send from another device) still streams to
+ * every tab that has the session open. Subscribing only attached a socket to a
+ * run already going, and nothing attached it to one that started later: such a
+ * turn showed nothing — neither the message nor the reply — until it ended.
+ */
+const sessionWatchers = new Map<string, Set<WebSocket>>();
+
+function watchSession(sessionId: string, ws: WebSocket): void {
+  let watchers = sessionWatchers.get(sessionId);
+  if (!watchers) {
+    watchers = new Set();
+    sessionWatchers.set(sessionId, watchers);
+  }
+  watchers.add(ws);
+}
+
+function forgetWatcher(ws: WebSocket): void {
+  for (const [sessionId, watchers] of sessionWatchers) {
+    watchers.delete(ws);
+    if (watchers.size === 0) {
+      sessionWatchers.delete(sessionId);
+    }
+  }
+}
+
+/** Ids of live user turns share a prefix the client retires them by. */
+function generateLiveUserTurnId(): string {
+  return `live_user_${randomUUID()}`;
+}
+
 async function dispatchRun(
   ws: WebSocket | null,
   userId: string | number | null,
@@ -240,6 +273,12 @@ async function dispatchRun(
       );
     }
     return { started: false, error: 'A run is already in progress for this session.' };
+  }
+
+  for (const watcher of sessionWatchers.get(sessionId) ?? []) {
+    if (watcher !== ws && watcher.readyState === WS_OPEN_STATE) {
+      chatRunRegistry.attachConnection(sessionId, watcher);
+    }
   }
 
   const clientOptions = (data.options ?? {}) as AnyRecord;
@@ -291,6 +330,22 @@ async function dispatchRun(
     // be taken back. Inside the try so a rewind that throws still releases the
     // run instead of leaving the session processing forever.
     await beforeRun?.(run);
+    // The turn's own message opens its stream. Providers do not echo it, and
+    // the sender's optimistic copy reaches no one else: a turn sent from the
+    // queue, a schedule or another device showed nothing of what was asked
+    // until the run ended and the transcript was read again. Being in the
+    // replay buffer, it also reaches a tab that subscribes mid-run.
+    if (command.trim() || uniqueAttachments.length > 0) {
+      run.writer.send(createNormalizedMessage({
+        kind: 'text',
+        role: 'user',
+        provider,
+        id: generateLiveUserTurnId(),
+        content: command,
+        images: uniqueAttachments.filter(isImageAttachmentDescriptor),
+        files: uniqueAttachments.filter((descriptor) => !isImageAttachmentDescriptor(descriptor)),
+      }));
+    }
     await dependencies.runtime.run(provider, command, runtimeOptions, run.writer);
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
@@ -524,6 +579,7 @@ function handleChatSubscribe(
       ? Math.max(0, Math.floor(lastSeqRaw))
       : 0;
 
+    watchSession(sessionId, ws);
     const run = chatRunRegistry.getRun(sessionId);
     const isProcessing = chatRunRegistry.isProcessing(sessionId);
 
@@ -713,5 +769,6 @@ export function handleChatConnection(
   ws.on('close', () => {
     console.log('[INFO] Chat client disconnected');
     connectedClients.delete(ws);
+    forgetWatcher(ws);
   });
 }

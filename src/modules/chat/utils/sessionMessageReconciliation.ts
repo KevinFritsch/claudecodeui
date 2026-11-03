@@ -93,7 +93,39 @@ function findServerEchoForLocalUser(
 }
 
 /**
- * Removes local optimistic user rows once a corresponding persisted turn is
+ * The user turn the server streams as a run starts (`live_user_` ids) stands
+ * in for the persisted row exactly as this tab's own optimistic echo does
+ * (`local_` ids), for the clients that did not send it.
+ */
+function isProvisionalUserTurn(message: NormalizedMessage): boolean {
+  return message.id.startsWith('local_') || message.id.startsWith('live_user_');
+}
+
+/**
+ * Whether a user turn streamed by the server is one this tab already shows as
+ * its own optimistic echo. Matched one-to-one against the echoes not yet
+ * paired with an earlier streamed turn, so sending the same words twice keeps
+ * both.
+ */
+export function isLiveUserTurnAlreadyEchoed(
+  liveTurn: NormalizedMessage,
+  realtimeMessages: NormalizedMessage[],
+): boolean {
+  const liveFingerprint = userTurnFingerprint(liveTurn);
+  if (!liveFingerprint) {
+    return false;
+  }
+  const sameTurn = (message: NormalizedMessage) => {
+    const fingerprint = userTurnFingerprint(message);
+    return Boolean(fingerprint && userTurnFingerprintsMatch(liveFingerprint, fingerprint));
+  };
+  const echoes = realtimeMessages.filter((message) => message.id.startsWith('local_') && sameTurn(message));
+  const alreadyStreamed = realtimeMessages.filter((message) => message.id.startsWith('live_user_') && sameTurn(message));
+  return echoes.length > alreadyStreamed.length;
+}
+
+/**
+ * Removes provisional user rows once a corresponding persisted turn is
  * available. Matches are one-to-one so repeated sends cannot claim one row.
  */
 export function removeOptimisticUserEchoes(
@@ -103,7 +135,7 @@ export function removeOptimisticUserEchoes(
   const claimedServerIds = new Set<string>();
 
   return realtimeMessages.filter((message) => {
-    if (!message.id.startsWith('local_')) {
+    if (!isProvisionalUserTurn(message)) {
       return true;
     }
 

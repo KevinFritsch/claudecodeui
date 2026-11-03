@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import type { NormalizedMessage } from '@/shared/types';
-import { removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
+import { isLiveUserTurnAlreadyEchoed, removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
 
 const createUserMessage = (
   id: string,
@@ -98,4 +98,23 @@ test('a replacement echo survives a kept turn that repeats its text', () => {
   // keep, so it retires the echo.
   const persisted = [...kept, userRow('persisted', 'continue', '2026-01-01T00:00:25.000Z')];
   assert.deepEqual(removeOptimisticUserEchoes(persisted, [echo]), []);
+});
+
+test('retires the server-streamed user turn once the transcript has it', () => {
+  const live = createUserMessage('live_user_1', '2026-11-03T13:14:25.000Z', { content: 'queued follow-up' });
+  const persisted = createUserMessage('claude_user', '2026-11-03T13:14:26.000Z', { content: 'queued follow-up' });
+
+  assert.deepEqual(removeOptimisticUserEchoes([persisted], [live]), []);
+});
+
+test('a streamed user turn is skipped only by an echo it has not already paired with', () => {
+  const echo = createUserMessage('local_1', '2026-11-03T13:14:25.000Z', { content: 'yes' });
+  const live = createUserMessage('live_user_1', '2026-11-03T13:14:25.500Z', { content: 'yes' });
+  const other = createUserMessage('live_user_2', '2026-11-03T13:14:26.000Z', { content: 'something else' });
+
+  assert.equal(isLiveUserTurnAlreadyEchoed(live, [echo]), true);
+  assert.equal(isLiveUserTurnAlreadyEchoed(other, [echo]), false);
+  assert.equal(isLiveUserTurnAlreadyEchoed(live, []), false);
+  // Sent the same words again from another device: the one echo is used up.
+  assert.equal(isLiveUserTurnAlreadyEchoed(live, [echo, { ...live, id: 'live_user_0' }]), false);
 });
