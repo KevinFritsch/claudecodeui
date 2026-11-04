@@ -447,6 +447,9 @@ export const api = {
     // Session/weekly/per-model plan limits of the logged-in Claude subscription.
     claudePlanUsage: (refresh = false) =>
       get(`/api/providers/claude/plan-usage${query({ refresh })}`),
+    // Claude's MCP servers (claude.ai connectors, plugin and own servers) with live status and tools.
+    claudeConnectors: (refresh = false) =>
+      get(`/api/providers/claude/connectors${query({ refresh })}`),
     // ChatGPT plan limits Codex last reported; `connected: false` when Codex has no login.
     codexPlanUsage: () => get('/api/providers/codex/plan-usage'),
     cliStatus: (provider: string) =>

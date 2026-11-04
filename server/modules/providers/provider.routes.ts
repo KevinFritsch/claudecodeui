@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from 'express';
 
+import { claudeConnectorsService } from '@/modules/providers/services/claude-connectors.service.js';
 import { claudePlanUsageService } from '@/modules/providers/services/claude-plan-usage.service.js';
 import { codexPlanUsageService } from '@/modules/providers/services/codex-plan-usage.service.js';
 import { providerAuthService } from '@/modules/providers/services/provider-auth.service.js';
@@ -632,6 +633,15 @@ router.get(
     const forceRefresh = parseOptionalBooleanQuery(req.query.refresh, 'refresh') ?? false;
     const usage = await claudePlanUsageService.getPlanUsage({ forceRefresh });
     res.json(createApiSuccessResponse(usage));
+  }),
+);
+
+/** Every MCP server Claude sessions start with (claude.ai, plugins, the user's own) and whether each connects. */
+router.get(
+  '/claude/connectors',
+  asyncHandler(async (req: Request, res: Response) => {
+    const refresh = parseOptionalBooleanQuery(req.query.refresh, 'refresh') ?? false;
+    res.json(createApiSuccessResponse(await claudeConnectorsService.getConnectors({ refresh })));
   }),
 );
 

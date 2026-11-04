@@ -1,5 +1,5 @@
 import type { AgentCategory, AgentContextByProvider, AgentProvider, AgentSettingsProject, ClaudePermissionsState, CodexPermissionMode, CursorPermissionsState, McpProject, SkillsProject } from '@/shared/types';
-import { McpServers } from '@/modules/mcp';
+import { ClaudeConnectors, McpServers } from '@/modules/mcp';
 import { ProviderSkills } from '@/modules/skills';
 import AccountContent from '@/modules/settings/tabs/agents-settings/sections/content/AccountContent';
 import PermissionsContent from '@/modules/settings/tabs/agents-settings/sections/content/PermissionsContent';
@@ -83,6 +83,8 @@ export default function AgentCategoryContentSection({
           onPermissionModeChange={onCodexPermissionModeChange}
         />
       )}
+
+      {selectedCategory === 'mcp' && selectedAgent === 'claude' && <ClaudeConnectors />}
 
       {selectedCategory === 'mcp' && (
         // AgentSettingsProject.name is populated from the DB projectId by
