@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import type { NormalizedMessage } from '@/shared/types';
-import { isLiveUserTurnAlreadyEchoed, removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
+import { findLiveUserTurnForEcho, isLiveUserTurnAlreadyEchoed, removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
 
 const createUserMessage = (
   id: string,
@@ -117,4 +117,15 @@ test('a streamed user turn is skipped only by an echo it has not already paired 
   assert.equal(isLiveUserTurnAlreadyEchoed(live, []), false);
   // Sent the same words again from another device: the one echo is used up.
   assert.equal(isLiveUserTurnAlreadyEchoed(live, [echo, { ...live, id: 'live_user_0' }]), false);
+});
+
+test('a new session\'s pending echo takes the place of the turn the run already streamed', () => {
+  const live = createUserMessage('live_user_1', '2026-11-05T11:49:07.000Z', { content: 'what is the time' });
+  const echo = createUserMessage('local_1', '2026-11-05T11:49:07.100Z', { content: 'what is the time' });
+  const other = createUserMessage('local_2', '2026-11-05T11:49:08.000Z', { content: 'something else' });
+
+  assert.equal(findLiveUserTurnForEcho(echo, [live]), 0);
+  assert.equal(findLiveUserTurnForEcho(other, [live]), -1);
+  // Already paired with an earlier echo: a second identical send is its own turn.
+  assert.equal(findLiveUserTurnForEcho(echo, [{ ...echo, id: 'local_0' }, live]), -1);
 });

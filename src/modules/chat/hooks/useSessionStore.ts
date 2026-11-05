@@ -11,7 +11,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { api } from '@/shared/api';
 import type { LLMProvider, NormalizedMessage } from '@/shared/types';
-import { isLiveUserTurnAlreadyEchoed, removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
+import { findLiveUserTurnForEcho, isLiveUserTurnAlreadyEchoed, removeOptimisticUserEchoes } from '@/modules/chat/utils/sessionMessageReconciliation';
 import {
   hasReachedCachedTailTimeBoundary,
   mergeLatestServerPage,
@@ -764,6 +764,15 @@ export function useSessionStore() {
       msg.sessionId === sessionId
         ? msg
         : { ...msg, sessionId };
+    if (msg.id.startsWith('local_')) {
+      // The run already streamed this turn (a new session's pending message is
+      // only flushed once the session exists): take its place instead of
+      // showing the message twice.
+      const liveIndex = findLiveUserTurnForEcho(msg, slot.realtimeMessages);
+      if (liveIndex !== -1) {
+        slot.realtimeMessages = slot.realtimeMessages.filter((_, index) => index !== liveIndex);
+      }
+    }
     let updated = [...slot.realtimeMessages, normalizedMessage];
     if (updated.length > MAX_REALTIME_MESSAGES) {
       updated = updated.slice(-MAX_REALTIME_MESSAGES);

@@ -125,6 +125,38 @@ export function isLiveUserTurnAlreadyEchoed(
 }
 
 /**
+ * The reverse order: index of a server-streamed user turn this tab's own echo
+ * would duplicate, or -1. A new session's first message is held as pending
+ * until the session id is known, by which time the run's streamed copy of it
+ * has usually arrived. Matched one-to-one like `isLiveUserTurnAlreadyEchoed`.
+ */
+export function findLiveUserTurnForEcho(
+  echo: NormalizedMessage,
+  realtimeMessages: NormalizedMessage[],
+): number {
+  const echoFingerprint = userTurnFingerprint(echo);
+  if (!echoFingerprint) {
+    return -1;
+  }
+  const sameTurn = (message: NormalizedMessage) => {
+    const fingerprint = userTurnFingerprint(message);
+    return Boolean(fingerprint && userTurnFingerprintsMatch(echoFingerprint, fingerprint));
+  };
+  const pairedEchoes = realtimeMessages.filter((message) => message.id.startsWith('local_') && sameTurn(message)).length;
+  let unpairedSeen = 0;
+  for (let index = 0; index < realtimeMessages.length; index++) {
+    const message = realtimeMessages[index];
+    if (message.id.startsWith('live_user_') && sameTurn(message)) {
+      if (unpairedSeen >= pairedEchoes) {
+        return index;
+      }
+      unpairedSeen++;
+    }
+  }
+  return -1;
+}
+
+/**
  * Removes provisional user rows once a corresponding persisted turn is
  * available. Matches are one-to-one so repeated sends cannot claim one row.
  */
