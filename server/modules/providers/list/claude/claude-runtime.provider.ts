@@ -13,9 +13,6 @@
  */
 
 import crypto from 'crypto';
-import { promises as fs } from 'fs';
-import os from 'os';
-import path from 'path';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -948,63 +945,6 @@ function createHeldPromptStream(messages: unknown[]) {
 }
 
 /**
- * Loads MCP server configurations from ~/.claude.json
- * @param {string} cwd - Current working directory for project-specific configs
- * @returns {Object|null} MCP servers object or null if none found
- */
-async function loadMcpConfig(cwd: string | undefined): Promise<AnyRecord | null> {
-  try {
-    const claudeConfigPath = path.join(os.homedir(), '.claude.json');
-
-    // Check if config file exists
-    try {
-      await fs.access(claudeConfigPath);
-    } catch (error) {
-      // File doesn't exist, return null
-      // No config file
-      return null;
-    }
-
-    // Read and parse config file
-    let claudeConfig;
-    try {
-      const configContent = await fs.readFile(claudeConfigPath, 'utf8');
-      claudeConfig = JSON.parse(configContent);
-    } catch (error) {
-      console.error('Failed to parse ~/.claude.json:', (error as Error).message);
-      return null;
-    }
-
-    // Extract MCP servers (merge global and project-specific)
-    let mcpServers: AnyRecord = {};
-
-    // Add global MCP servers
-    if (claudeConfig.mcpServers && typeof claudeConfig.mcpServers === 'object') {
-      mcpServers = { ...claudeConfig.mcpServers };
-      // Global MCP servers loaded
-    }
-
-    // Add/override with project-specific MCP servers
-    if (claudeConfig.claudeProjects && cwd) {
-      const projectConfig = claudeConfig.claudeProjects[cwd];
-      if (projectConfig && projectConfig.mcpServers && typeof projectConfig.mcpServers === 'object') {
-        mcpServers = { ...mcpServers, ...projectConfig.mcpServers };
-        // Project MCP servers merged
-      }
-    }
-
-    // Return null if no servers found
-    if (Object.keys(mcpServers).length === 0) {
-      return null;
-    }
-    return mcpServers;
-  } catch (error) {
-    console.error('Error loading MCP config:', (error as Error).message);
-    return null;
-  }
-}
-
-/**
  * Executes a Claude query using the SDK
  * @param {string} command - User prompt/command
  * @param {Object} options - Query options
@@ -1107,10 +1047,10 @@ async function queryClaudeSDK(
       effortModels,
     });
 
-    const mcpServers = await loadMcpConfig(options.cwd);
-    if (mcpServers) {
-      sdkOptions.mcpServers = mcpServers;
-    }
+    // MCP servers are not passed explicitly: the CLI already loads user/local/project
+    // servers through settingSources. Passing them via --mcp-config makes the CLI wait
+    // for every MCP server (including the slow or failing org-synced plugin servers)
+    // to connect or time out before the first turn, which added ~30s to session starts.
 
     // Every turn uses streaming input so stdin stays open past the turn's
     // `result`. The message list is reusable, but each query attempt needs its
