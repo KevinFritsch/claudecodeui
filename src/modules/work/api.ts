@@ -28,6 +28,8 @@ export type JiraTask = {
   priority: string | null;
   updated: string;
   url: string;
+  sprint: { name: string; state: 'active' | 'future' } | null;
+  carriedOverSprints: number;
 };
 
 export type PullRequest = {

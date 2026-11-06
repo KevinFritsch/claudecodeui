@@ -66,6 +66,36 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/** "GOL Sprint 87" → "Sprint 87": the project prefix is noise inside the project's own dashboard. */
+function shortSprintName(name: string): string {
+  const match = name.match(/sprint\s*\d+/i);
+  return match ? match[0].replace(/^sprint/i, 'Sprint') : name;
+}
+
+function SprintBadge({ task }: { task: JiraTask }) {
+  if (!task.sprint) {
+    return (
+      <span className="inline-flex shrink-0 items-center rounded border border-dashed border-muted-foreground/40 px-1.5 py-px text-[10px] font-medium text-muted-foreground" title="Not in a sprint">
+        Backlog
+      </span>
+    );
+  }
+  const isActive = task.sprint.state === 'active';
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-medium',
+        isActive ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300' : 'bg-muted text-muted-foreground',
+      )}
+      title={isActive ? `In the current sprint (${task.sprint.name})` : `Planned for ${task.sprint.name}`}
+    >
+      {isActive ? '● ' : ''}{shortSprintName(task.sprint.name)}{isActive ? '' : ' (next)'}
+    </span>
+  );
+}
+
+type SprintFilter = 'all' | 'sprint' | 'backlog';
+
 function SectionHeader({ title, count, right, open, onToggle }: { title: string; count?: number; right?: ReactNode; open?: boolean; onToggle?: () => void }) {
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
@@ -248,8 +278,17 @@ function JiraTaskRow({
             <span className="text-sm text-foreground group-hover/link:underline">{task.summary}</span>
           </a>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+            <SprintBadge task={task} />
             <StatusBadge status={task.status} />
             <span>{task.issueType}</span>
+            {task.carriedOverSprints > 0 && (
+              <span
+                className={cn(task.carriedOverSprints >= 3 && 'text-amber-700 dark:text-amber-400')}
+                title={`Already went through ${task.carriedOverSprints} closed sprint${task.carriedOverSprints > 1 ? 's' : ''}`}
+              >
+                · ↻ {task.carriedOverSprints} sprint{task.carriedOverSprints > 1 ? 's' : ''}
+              </span>
+            )}
             {task.priority && task.priority !== 'Medium' && <span>· {task.priority}</span>}
             <span>· {timeAgo(task.updated)}</span>
             {pullRequests.map((pr) => (
@@ -316,6 +355,27 @@ function JiraSection({
   const [moved, setMoved] = useState<MovedTask[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [sprintFilter, setSprintFilter] = useState<SprintFilter>(() => {
+    try {
+      const saved = localStorage.getItem('work:sprintFilter');
+      return saved === 'sprint' || saved === 'backlog' ? saved : 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const chooseFilter = (value: SprintFilter) => {
+    setSprintFilter(value);
+    try {
+      localStorage.setItem('work:sprintFilter', value);
+    } catch {
+      /* private mode: the choice just isn't remembered */
+    }
+  };
+  const inSprintCount = tasks.filter((t) => t.sprint?.state === 'active').length;
+  const visibleTasks = tasks.filter((t) => (
+    sprintFilter === 'all'
+    || (sprintFilter === 'sprint' ? t.sprint?.state === 'active' : t.sprint?.state !== 'active')
+  ));
 
   // Moved rows offer Undo for a few seconds, then drop off.
   useEffect(() => {
@@ -360,14 +420,44 @@ function JiraSection({
   const groups = config.statuses.map((status) => ({
     status,
     collapsedByDefault: config.collapsedStatuses.some((s) => s.toLowerCase() === status.toLowerCase()),
-    tasks: tasks
+    // Current-sprint work first, then the next sprint, then backlog; newest first within each.
+    tasks: visibleTasks
       .filter((t) => t.status.toLowerCase() === status.toLowerCase())
-      .sort((a, b) => b.updated.localeCompare(a.updated)),
+      .sort((a, b) => {
+        const rank = (t: JiraTask) => (t.sprint?.state === 'active' ? 0 : t.sprint ? 1 : 2);
+        return rank(a) - rank(b) || b.updated.localeCompare(a.updated);
+      }),
   })).filter((g) => g.tasks.length > 0);
 
   return (
     <section>
-      <SectionHeader title={`Jira · ${config.projectKey}`} count={tasks.length} />
+      <SectionHeader
+        title={`Jira · ${config.projectKey}`}
+        count={tasks.length}
+        right={(
+          <div role="radiogroup" aria-label="Sprint filter" className="flex items-center rounded-md border border-border/60 p-px text-[11px]">
+            {([
+              ['all', `All ${tasks.length}`],
+              ['sprint', `Sprint ${inSprintCount}`],
+              ['backlog', `Backlog ${tasks.length - inSprintCount}`],
+            ] as Array<[SprintFilter, string]>).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={sprintFilter === value}
+                onClick={() => chooseFilter(value)}
+                className={cn(
+                  'rounded px-1.5 py-0.5 transition-colors',
+                  sprintFilter === value ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      />
       {error && <SourceError label="Jira" error={error} />}
       {actionError && <p className="mb-1 px-1 text-xs text-destructive">{actionError}</p>}
 
@@ -415,6 +505,9 @@ function JiraSection({
         );
       })}
       {!error && tasks.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">No open Jira tasks assigned to you.</p>}
+      {!error && tasks.length > 0 && visibleTasks.length === 0 && (
+        <p className="px-1 py-2 text-xs text-muted-foreground">{sprintFilter === 'sprint' ? 'Nothing of yours in the current sprint.' : 'Nothing in the backlog.'}</p>
+      )}
     </section>
   );
 }

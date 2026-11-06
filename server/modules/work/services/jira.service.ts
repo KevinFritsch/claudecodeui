@@ -19,7 +19,21 @@ export type JiraTask = {
   priorityIcon: string | null;
   updated: string;
   url: string;
+  /** The active (or else upcoming) sprint the task is in; null means backlog. */
+  sprint: { name: string; state: 'active' | 'future' } | null;
+  /** How many closed sprints the task already went through without finishing. */
+  carriedOverSprints: number;
 };
+
+type RawSprint = { name: string; state: string };
+
+function pickSprint(sprints: RawSprint[] | null | undefined): JiraTask['sprint'] {
+  const list = sprints ?? [];
+  const active = list.find((s) => s.state === 'active');
+  if (active) return { name: active.name, state: 'active' };
+  const future = list.find((s) => s.state === 'future');
+  return future ? { name: future.name, state: 'future' } : null;
+}
 
 type JiraCredentials = { base: string; auth: string };
 
@@ -73,12 +87,13 @@ export async function listMyTasks(secrets: WorkSecrets, config: JiraProjectConfi
     `status in (${config.statuses.map(quote).join(', ')})`,
   ].join(' AND ') + ' ORDER BY updated DESC';
 
+  const sprintField = config.sprintField || 'customfield_10020';
   const tasks: JiraTask[] = [];
   let nextPageToken: string | undefined;
   for (let page = 0; page < 5; page += 1) {
     const params = new URLSearchParams({
       jql,
-      fields: 'summary,status,issuetype,priority,updated',
+      fields: `summary,status,issuetype,priority,updated,${sprintField}`,
       maxResults: '100',
     });
     if (nextPageToken) params.set('nextPageToken', nextPageToken);
@@ -91,6 +106,7 @@ export async function listMyTasks(secrets: WorkSecrets, config: JiraProjectConfi
           issuetype?: { name: string; iconUrl?: string };
           priority?: { name: string; iconUrl?: string } | null;
           updated: string;
+          [field: string]: unknown;
         };
       }>;
       nextPageToken?: string;
@@ -98,6 +114,7 @@ export async function listMyTasks(secrets: WorkSecrets, config: JiraProjectConfi
     };
     const data = await jiraFetch<SearchResponse>(creds, `/search/jql?${params}`);
     for (const issue of data.issues) {
+      const sprints = issue.fields[sprintField] as RawSprint[] | null | undefined;
       tasks.push({
         key: issue.key,
         summary: issue.fields.summary,
@@ -109,6 +126,8 @@ export async function listMyTasks(secrets: WorkSecrets, config: JiraProjectConfi
         priorityIcon: issue.fields.priority?.iconUrl ?? null,
         updated: issue.fields.updated,
         url: `${site}/browse/${issue.key}`,
+        sprint: pickSprint(sprints),
+        carriedOverSprints: (sprints ?? []).filter((s) => s.state === 'closed').length,
       });
     }
     if (data.isLast !== false || !data.nextPageToken) break;

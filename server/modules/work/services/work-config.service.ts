@@ -24,6 +24,8 @@ export type JiraProjectConfig = {
   collapsedStatuses?: string[];
   /** Transition targets offered as buttons, by status name. */
   actions: string[];
+  /** Custom field holding the issue's sprints (Jira Software default: customfield_10020). */
+  sprintField?: string;
 };
 
 export type BitbucketProjectConfig = {
