@@ -1,8 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useGitPanelController } from '@/modules/git-panel/hooks/useGitPanelController';
 import { useRevertLocalCommit } from '@/modules/git-panel/hooks/useRevertLocalCommit';
+import { useNestedRepos } from '@/modules/git-panel/hooks/useNestedRepos';
+import GitRepoSwitcher from '@/modules/git-panel/repos/GitRepoSwitcher';
+import { scopeGitProjectId } from '@/shared/api';
 import type { ConfirmationRequest, FileOpenHandler, GitPanelView, Project } from '@/shared/types';
 import { getChangedFileCount } from '@/modules/git-panel/utils/gitPanelUtils';
 import ChangesView from '@/modules/git-panel/changes/ChangesView';
@@ -27,13 +30,42 @@ type GitPanelProps = {
 
 /** Exported through the git-panel barrel; the project-workspace module renders it as the source-control sidebar tab. */
 export default function GitPanel({
-  selectedProject,
+  selectedProject: workspaceProject,
   isMobile = false,
-  onFileOpen,
+  onFileOpen: workspaceOnFileOpen,
   onProjectSelect,
   onProjectsRefresh,
 }: GitPanelProps) {
   const { t } = useTranslation();
+  // A project folder that is not a repo but holds several (e.g. a task folder
+  // with golfn-api/ and golfn-app/ worktrees) gets a repo switcher; every git
+  // call below is then scoped to the selected repo.
+  const {
+    repos,
+    isNested,
+    selectedRepo,
+    selectRepo,
+    refreshRepos,
+    isLoaded: reposLoaded,
+  } = useNestedRepos(workspaceProject?.projectId ?? null);
+  const activeRepo = isNested ? selectedRepo : null;
+  const selectedProject = useMemo<Project | null>(() => {
+    if (!workspaceProject || !activeRepo) return workspaceProject;
+    return {
+      ...workspaceProject,
+      projectId: scopeGitProjectId(workspaceProject.projectId, activeRepo),
+      fullPath: `${workspaceProject.fullPath.replace(/\/+$/, '')}/${activeRepo}`,
+    };
+  }, [workspaceProject, activeRepo]);
+  // Git reports paths relative to the repo; the file opener resolves them
+  // against the workspace folder, so prefix the repo's sub-path.
+  const onFileOpen = useMemo<FileOpenHandler | undefined>(() => {
+    if (!workspaceOnFileOpen || !activeRepo) return workspaceOnFileOpen;
+    return (filePath, diffInfo) => {
+      const isAbsolute = filePath.startsWith('/');
+      workspaceOnFileOpen(isAbsolute ? filePath : `${activeRepo}/${filePath.replace(/^\.\//, '')}`, diffInfo);
+    };
+  }, [workspaceOnFileOpen, activeRepo]);
   const [activeView, setActiveView] = useState<GitPanelView>('changes');
   const [wrapText, setWrapText] = useState(true);
   const [hasExpandedFiles, setHasExpandedFiles] = useState(false);
@@ -105,10 +137,23 @@ export default function GitPanel({
     }
   }, [confirmAction]);
 
+  // Keep the per-repo change counts in the switcher in step with the panel.
+  useEffect(() => {
+    if (isNested && gitStatus) void refreshRepos();
+  }, [gitStatus, isNested, refreshRepos]);
+
   const changeCount = getChangedFileCount(gitStatus);
   // Without a repository the branch/fetch/refresh header controls are all
   // meaningless — hide the whole header and let the init state own the panel.
   const isMissingRepository = Boolean(gitStatus?.notGitRepository);
+
+  if (workspaceProject && !reposLoaded) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <p>{t('git:repos.loading', { defaultValue: 'Looking for repositories…' })}</p>
+      </div>
+    );
+  }
 
   if (!selectedProject) {
     return (
@@ -120,6 +165,14 @@ export default function GitPanel({
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {isNested && repos.length > 0 && (
+        <GitRepoSwitcher
+          repos={repos}
+          selectedRepo={selectedRepo}
+          isMobile={isMobile}
+          onSelect={selectRepo}
+        />
+      )}
       {!isMissingRepository && (
         <GitPanelHeader
           isMobile={isMobile}
@@ -224,7 +277,7 @@ export default function GitPanel({
             <WorktreesView
               key={selectedProject.fullPath}
               isMobile={isMobile}
-              selectedProject={selectedProject}
+              selectedProject={workspaceProject ?? selectedProject}
               localBranches={localBranches}
               onProjectSelect={onProjectSelect}
               onProjectsRefresh={onProjectsRefresh}
