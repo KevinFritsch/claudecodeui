@@ -13,6 +13,7 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 import { listOpenPullRequests, type PullRequest } from './services/bitbucket.service.js';
 import { listMyTasks, transitionIssue, type JiraTask } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
+import { resolvedService } from './services/resolved.service.js';
 import { listOpenMentions, markDone, postReply, unmarkDone, type SlackMention } from './services/slack.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
@@ -106,10 +107,17 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
   const projectPath = readProjectPath(req.query.projectPath);
   const config = requireConfig(projectPath);
   const snapshot = await loadSnapshot(projectPath, config, req.query.refresh === '1');
+  // Resolved Slack mentions are hidden from the open list but kept, so they can be brought back.
+  const resolvedSlack = resolvedService.keys(projectPath, 'slack');
+  const slack = snapshot.slack
+    ? { ...snapshot.slack, items: snapshot.slack.items.filter((m) => !resolvedSlack.has(m.id)) }
+    : null;
   res.json(createApiSuccessResponse({
     todos: config.todos ? todosService.list(projectPath) : null,
     links: linksService.list(projectPath),
     ...snapshot,
+    slack,
+    slackResolved: snapshot.slack ? snapshot.slack.items.filter((m) => resolvedSlack.has(m.id)) : [],
   }));
 }));
 
@@ -186,6 +194,21 @@ async function slackAction<T>(run: () => Promise<T>): Promise<T> {
     throw new AppError((error as Error).message, { code: 'SLACK_ACTION_FAILED', statusCode: 502 });
   }
 }
+
+/** Hides items from the dashboard (or brings them back) without touching Slack or Jira. */
+router.post('/resolve', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const projectPath = readProjectPath(body.projectPath);
+  requireConfig(projectPath);
+  const itemType = body.itemType;
+  if (itemType !== 'slack' && itemType !== 'jira' && itemType !== 'todo') {
+    throw new AppError('itemType must be slack, jira or todo.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  }
+  const keys = Array.isArray(body.itemKeys) ? body.itemKeys.filter((k): k is string => typeof k === 'string' && k.length > 0 && k.length < 200) : [];
+  if (keys.length === 0 || keys.length > 500) throw new AppError('itemKeys is required.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  resolvedService.set(projectPath, itemType, keys, body.resolved !== false);
+  res.json(createApiSuccessResponse({ count: keys.length, resolved: body.resolved !== false }));
+}));
 
 /** ✅ a Slack message as the user (or undo it with done=false). */
 router.post('/slack/done', asyncHandler(async (req: Request, res: Response) => {

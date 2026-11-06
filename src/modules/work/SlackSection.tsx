@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, Undo2, Users, X } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, Undo2, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import { cn } from '@/shared/utils';
@@ -37,12 +37,27 @@ function slackSeed(mention: SlackMention): SessionSeed {
   };
 }
 
+const AVATAR_COLORS = ['bg-rose-500', 'bg-amber-500', 'bg-emerald-500', 'bg-sky-500', 'bg-violet-500', 'bg-fuchsia-500', 'bg-teal-500', 'bg-orange-500'];
+
+function Avatar({ mention, size = 'h-8 w-8' }: { mention: SlackMention; size?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (mention.authorAvatar && !failed) {
+    return <img src={mention.authorAvatar} alt="" onError={() => setFailed(true)} className={cn(size, 'shrink-0 rounded-md object-cover')} />;
+  }
+  const hash = [...mention.author].reduce((n, c) => n + c.charCodeAt(0), 0);
+  return (
+    <span className={cn(size, AVATAR_COLORS[hash % AVATAR_COLORS.length], 'flex shrink-0 items-center justify-center rounded-md text-xs font-semibold uppercase text-white')}>
+      {mention.author.slice(0, 1)}
+    </span>
+  );
+}
+
 function ChannelIcon({ kind }: { kind: SlackMention['channelKind'] }) {
   const Icon = kind === 'dm' ? MessageCircle : kind === 'group' ? Users : kind === 'private' ? Lock : Hash;
   return <Icon className="h-3 w-3 shrink-0" />;
 }
 
-type Closed = { mention: SlackMention; how: 'done' | 'replied'; at: number };
+type Closed = { mention: SlackMention; how: 'done' | 'replied' | 'resolved'; at: number };
 
 function MentionRow({
   mention,
@@ -55,6 +70,7 @@ function MentionRow({
   sessions: SessionActions;
   onClosed: (mention: SlackMention, how: Closed['how']) => void;
 }) {
+  const [resolving, setResolving] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [replying, setReplying] = useState(false);
   const [draft, setDraft] = useState('');
@@ -101,6 +117,18 @@ function MentionRow({
     }
   };
 
+  const resolve = async () => {
+    setResolving(true);
+    setError(null);
+    try {
+      await workApi.resolve(projectPath, 'slack', [mention.id], true);
+      onClosed(mention, 'resolved');
+    } catch (e) {
+      setError((e as Error).message);
+      setResolving(false);
+    }
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -114,7 +142,9 @@ function MentionRow({
   const button = 'inline-flex h-6 items-center gap-1 rounded border border-border/70 px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50';
 
   return (
-    <li className="group px-1 py-2.5">
+    <li className="group flex gap-2.5 px-1 py-2.5">
+      <Avatar mention={mention} />
+      <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <span className="font-semibold text-foreground">{mention.author}</span>
         <span className="inline-flex min-w-0 items-center gap-0.5">
@@ -195,6 +225,16 @@ function MentionRow({
             <Reply className="h-3 w-3" /> Reply
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => void resolve()}
+          disabled={resolving || busy !== null}
+          className={cn(button, 'ml-auto border-transparent')}
+          title="Hide it here only. Nothing is sent or added in Slack."
+        >
+          {resolving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />} Resolve
+        </button>
+      </div>
       </div>
     </li>
   );
@@ -204,18 +244,43 @@ function MentionRow({
 export default function SlackSection({
   projectPath,
   mentions,
+  resolved,
   error,
   sessions,
-  onMentionsChange,
+  onChange,
 }: {
   projectPath: string;
   mentions: SlackMention[];
+  resolved: SlackMention[];
   error: string | null;
   sessions: SessionActions;
-  onMentionsChange: (next: SlackMention[]) => void;
+  onChange: (next: { mentions: SlackMention[]; resolved: SlackMention[] }) => void;
 }) {
   const [closed, setClosed] = useState<Closed[]>([]);
   const [undoError, setUndoError] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const byNewest = (list: SlackMention[]) => [...list].sort((a, b) => Number(b.ts) - Number(a.ts));
+
+  const setResolved = async (items: SlackMention[], resolvedNow: boolean) => {
+    const ids = new Set(items.map((m) => m.id));
+    const previous = { mentions, resolved };
+    onChange(resolvedNow
+      ? { mentions: mentions.filter((m) => !ids.has(m.id)), resolved: byNewest([...resolved.filter((m) => !ids.has(m.id)), ...items]) }
+      : { mentions: byNewest([...mentions.filter((m) => !ids.has(m.id)), ...items]), resolved: resolved.filter((m) => !ids.has(m.id)) });
+    try {
+      await workApi.resolve(projectPath, 'slack', [...ids], resolvedNow);
+    } catch (e) {
+      setUndoError((e as Error).message);
+      onChange(previous);
+    }
+  };
+
+  const resolveAll = async () => {
+    setBulkBusy(true);
+    await setResolved(mentions, true);
+    setBulkBusy(false);
+  };
 
   useEffect(() => {
     if (closed.length === 0) return undefined;
@@ -226,15 +291,22 @@ export default function SlackSection({
   }, [closed.length]);
 
   const onClosed = (mention: SlackMention, how: Closed['how']) => {
-    onMentionsChange(mentions.filter((m) => m.id !== mention.id));
+    onChange({
+      mentions: mentions.filter((m) => m.id !== mention.id),
+      resolved: how === 'resolved' ? byNewest([mention, ...resolved]) : resolved,
+    });
     setClosed((list) => [...list.filter((c) => c.mention.id !== mention.id), { mention, how, at: Date.now() }]);
   };
 
   const undoDone = async (entry: Closed) => {
     setClosed((list) => list.filter((c) => c !== entry));
     try {
+      if (entry.how === 'resolved') {
+        await setResolved([entry.mention], false);
+        return;
+      }
       await workApi.slackDone(projectPath, entry.mention.id, false);
-      onMentionsChange([entry.mention, ...mentions].sort((a, b) => Number(b.ts) - Number(a.ts)));
+      onChange({ mentions: byNewest([entry.mention, ...mentions]), resolved });
     } catch (e) {
       setUndoError((e as Error).message);
     }
@@ -247,6 +319,17 @@ export default function SlackSection({
           Slack · needs you
           <span className="ml-1 font-normal normal-case text-muted-foreground/70">· {mentions.length}</span>
         </h3>
+        {mentions.length > 1 && (
+          <button
+            type="button"
+            onClick={() => void resolveAll()}
+            disabled={bulkBusy}
+            title="Hide all of these here. Nothing is sent or added in Slack."
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            {bulkBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />} Resolve all
+          </button>
+        )}
       </div>
       {error && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
@@ -262,9 +345,9 @@ export default function SlackSection({
             <li key={entry.mention.id} className="flex items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
               <Check className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                {entry.how === 'done' ? '✅ added on' : 'Replied to'} {entry.mention.author}'s message
+                {entry.how === 'done' ? '✅ added on' : entry.how === 'resolved' ? 'Resolved' : 'Replied to'} {entry.mention.author}'s message
               </span>
-              {entry.how === 'done' ? (
+              {entry.how !== 'replied' ? (
                 <button type="button" onClick={() => void undoDone(entry)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-emerald-500/20">
                   <Undo2 className="h-3 w-3" /> Undo
                 </button>
@@ -287,6 +370,42 @@ export default function SlackSection({
         ))}
       </ul>
       {!error && mentions.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Inbox zero: nothing on Slack is waiting on you.</p>}
+
+      {resolved.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowResolved((v) => !v)}
+            className="flex items-center gap-1 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            {showResolved ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Resolved
+            <span className="font-normal normal-case text-muted-foreground/70">· {resolved.length}</span>
+          </button>
+          {showResolved && (
+            <ul className="divide-y divide-border/40">
+              {resolved.map((mention) => (
+                <li key={mention.id} className="flex items-center gap-2 px-1 py-1.5 text-muted-foreground">
+                  <Avatar mention={mention} size="h-5 w-5" />
+                  <span className="shrink-0 text-xs font-medium text-foreground/80">{mention.author}</span>
+                  <a href={mention.permalink} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-xs hover:text-foreground hover:underline">
+                    {mention.text || 'open in Slack'}
+                  </a>
+                  <span className="shrink-0 text-[11px]">{slackTimeAgo(mention.ts)}</span>
+                  <button
+                    type="button"
+                    onClick={() => void setResolved([mention], false)}
+                    title="Show it in the list again"
+                    className="shrink-0 rounded p-0.5 hover:bg-accent hover:text-foreground"
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
 }

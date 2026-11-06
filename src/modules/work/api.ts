@@ -61,6 +61,7 @@ export type SlackMention = {
   threadTs: string;
   author: string;
   authorId: string | null;
+  authorAvatar: string | null;
   text: string;
   permalink: string;
   myReactions: string[];
@@ -83,6 +84,8 @@ export type WorkItems = {
   jira: SourceResult<JiraTask[]> | null;
   pullRequests: SourceResult<PullRequest[]> | null;
   slack: SourceResult<SlackMention[]> | null;
+  /** Mentions the user set aside on the dashboard (still open in Slack). */
+  slackResolved: SlackMention[];
 };
 
 async function request<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {
@@ -114,6 +117,8 @@ export const workApi = {
     request<{ linked: boolean }>('/api/work/links', { method: 'POST', body: { projectPath, itemType, itemKey, sessionId } }),
   unlink: (projectPath: string, itemType: WorkLink['itemType'], itemKey: string, sessionId: string) =>
     request<{ linked: boolean }>('/api/work/links', { method: 'DELETE', body: { projectPath, itemType, itemKey, sessionId } }),
+  resolve: (projectPath: string, itemType: WorkLink['itemType'], itemKeys: string[], resolved: boolean) =>
+    request<{ count: number; resolved: boolean }>('/api/work/resolve', { method: 'POST', body: { projectPath, itemType, itemKeys, resolved } }),
   slackDone: (projectPath: string, id: string, done: boolean) =>
     request<{ id: string; done: boolean }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done } }),
   slackReply: (projectPath: string, id: string, threadTs: string, text: string) =>

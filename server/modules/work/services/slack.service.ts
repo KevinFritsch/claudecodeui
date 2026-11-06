@@ -30,6 +30,8 @@ export type SlackMention = {
   threadTs: string;
   author: string;
   authorId: string | null;
+  /** Slack profile picture URL, when the author is a person. */
+  authorAvatar: string | null;
   /** Text with user mentions and links rendered readable. */
   text: string;
   permalink: string;
@@ -44,7 +46,7 @@ const DONE_REACTIONS = new Set(['white_check_mark', 'heavy_check_mark', 'ballot_
 const OPEN_RECHECK_MS = 90_000;
 
 const stateCache = new Map<string, MentionState>();
-const userNameCache = new Map<string, string>();
+const userCache = new Map<string, { name: string; avatar: string | null }>();
 let myHandle: string | null = null;
 
 class SlackClient {
@@ -81,17 +83,26 @@ function client(secrets: WorkSecrets): SlackClient {
   return new SlackClient(secrets.SLACK_USER_TOKEN);
 }
 
-async function userName(slack: SlackClient, id: string): Promise<string> {
-  const cached = userNameCache.get(id);
+async function userInfo(slack: SlackClient, id: string): Promise<{ name: string; avatar: string | null }> {
+  const cached = userCache.get(id);
   if (cached) return cached;
   try {
-    const data = await slack.call<{ user: { name: string; real_name?: string; profile?: { display_name?: string; real_name?: string } } }>('users.info', { user: id });
-    const name = data.user.profile?.display_name || data.user.profile?.real_name || data.user.real_name || data.user.name;
-    userNameCache.set(id, name);
-    return name;
+    type Profile = { display_name?: string; real_name?: string; image_72?: string; image_48?: string };
+    const data = await slack.call<{ user: { name: string; real_name?: string; profile?: Profile } }>('users.info', { user: id });
+    const profile = data.user.profile ?? {};
+    const info = {
+      name: profile.display_name || profile.real_name || data.user.real_name || data.user.name,
+      avatar: profile.image_72 || profile.image_48 || null,
+    };
+    userCache.set(id, info);
+    return info;
   } catch {
-    return id;
+    return { name: id, avatar: null };
   }
+}
+
+async function userName(slack: SlackClient, id: string): Promise<string> {
+  return (await userInfo(slack, id)).name;
 }
 
 /** Turns Slack markup (<@U1>, <#C1|name>, <url|label>) into plain readable text. */
@@ -214,7 +225,13 @@ export async function listOpenMentions(secrets: WorkSecrets, config: SlackProjec
       channelKind: kind,
       ts: match.ts,
       threadTs,
-      author: match.user ? await userName(slack, match.user) : (match.username ?? 'unknown'),
+      ...(await (async () => {
+        const info = match.user ? await userInfo(slack, match.user) : null;
+        return {
+          author: info?.name ?? match.username ?? 'unknown',
+          authorAvatar: info?.avatar ?? null,
+        };
+      })()),
       authorId: match.user ?? null,
       text: await renderText(slack, match.text ?? ''),
       permalink: match.permalink,

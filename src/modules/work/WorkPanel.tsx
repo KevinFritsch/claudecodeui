@@ -758,9 +758,12 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
                 <SlackSection
                   projectPath={projectPath}
                   mentions={items.slack.items}
+                  resolved={items.slackResolved ?? []}
                   error={items.slack.error}
                   sessions={sessions}
-                  onMentionsChange={(next) => setItems((cur) => (cur && cur.slack ? { ...cur, slack: { ...cur.slack, items: next } } : cur))}
+                  onChange={(next) => setItems((cur) => (cur && cur.slack
+                    ? { ...cur, slack: { ...cur.slack, items: next.mentions }, slackResolved: next.resolved }
+                    : cur))}
                 />
               )}
               {config.bitbucket && items.pullRequests && (
