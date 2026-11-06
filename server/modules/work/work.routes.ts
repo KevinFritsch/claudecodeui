@@ -12,6 +12,7 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 
 import { listOpenPullRequests, type PullRequest } from './services/bitbucket.service.js';
 import { listMyTasks, transitionIssue, type JiraTask } from './services/jira.service.js';
+import { linksService, type WorkItemType } from './services/links.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
 
@@ -103,6 +104,7 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
   const snapshot = await loadSnapshot(projectPath, config, req.query.refresh === '1');
   res.json(createApiSuccessResponse({
     todos: config.todos ? todosService.list(projectPath) : null,
+    links: linksService.list(projectPath),
     ...snapshot,
   }));
 }));
@@ -134,6 +136,34 @@ router.delete('/todos/:id', asyncHandler(async (req: Request, res: Response) => 
     throw new AppError('To-do not found.', { code: 'NOT_FOUND', statusCode: 404 });
   }
   res.json(createApiSuccessResponse({ deleted: true }));
+}));
+
+function readLinkBody(body: Record<string, unknown>): { projectPath: string; itemType: WorkItemType; itemKey: string; sessionId: string } {
+  const projectPath = readProjectPath(body.projectPath);
+  requireConfig(projectPath);
+  const itemType = body.itemType;
+  if (itemType !== 'jira' && itemType !== 'todo') {
+    throw new AppError('itemType must be jira or todo.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  }
+  const itemKey = typeof body.itemKey === 'string' || typeof body.itemKey === 'number' ? String(body.itemKey).trim() : '';
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+  if (!itemKey || !sessionId) {
+    throw new AppError('itemKey and sessionId are required.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  }
+  return { projectPath, itemType, itemKey, sessionId };
+}
+
+/** Attaches a chat session to a Jira task or to-do. */
+router.post('/links', asyncHandler(async (req: Request, res: Response) => {
+  const link = readLinkBody((req.body ?? {}) as Record<string, unknown>);
+  linksService.add(link.projectPath, link.itemType, link.itemKey, link.sessionId);
+  res.status(201).json(createApiSuccessResponse({ linked: true }));
+}));
+
+router.delete('/links', asyncHandler(async (req: Request, res: Response) => {
+  const link = readLinkBody((req.body ?? {}) as Record<string, unknown>);
+  linksService.remove(link.projectPath, link.itemType, link.itemKey, link.sessionId);
+  res.json(createApiSuccessResponse({ linked: false }));
 }));
 
 /** Moves a Jira issue to another status by name; answers with the status it came from so the UI can undo. */

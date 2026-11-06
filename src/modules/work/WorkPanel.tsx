@@ -7,6 +7,8 @@ import {
   GitPullRequest,
   Loader2,
   MessageSquare,
+  MessagesSquare,
+  Play,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -17,13 +19,118 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 
 import { cn } from '@/shared/utils';
 import type { Project } from '@/shared/types';
-import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, type WorkItems } from '@/modules/work/api';
+import { writeDraftText } from '@/shared/chatDrafts';
+import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, type WorkItems, type WorkLink } from '@/modules/work/api';
+import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
 
 type WorkPanelProps = {
   project: Project;
   config: WorkConfig;
   isVisible: boolean;
+  /** Opens an existing chat session in the Sessions view. */
+  onOpenSession: (sessionId: string) => void;
+  /** Opens a new, empty chat in this project (its composer shows the project draft). */
+  onStartNewSession: () => void;
 };
+
+/** What a row needs to show and start its linked sessions. */
+type SessionActions = {
+  linksFor: (itemType: WorkLink['itemType'], itemKey: string) => WorkLink[];
+  start: (item: SessionSeed) => void;
+  open: (sessionId: string) => void;
+  unlink: (link: WorkLink) => void;
+};
+
+type SessionSeed = {
+  itemType: WorkLink['itemType'];
+  itemKey: string;
+  /** Session title, e.g. "jira: GOL-3581 Cashback ledger line". */
+  sessionName: string;
+  /** Text prefilled in the new chat's composer. */
+  prompt: string;
+};
+
+const MAX_SESSION_NAME = 80;
+
+function clip(text: string, max: number): string {
+  const single = text.replace(/\s+/g, ' ').trim();
+  return single.length > max ? `${single.slice(0, max - 1).trimEnd()}…` : single;
+}
+
+function jiraSeed(task: JiraTask): SessionSeed {
+  const lines = [
+    `jira: ${task.key} ${task.summary}`,
+    task.url,
+    `Status: ${task.status}${task.sprint ? ` · ${task.sprint.name}` : ' · Backlog'}`,
+    '',
+    '',
+  ];
+  return {
+    itemType: 'jira',
+    itemKey: task.key,
+    sessionName: clip(`jira: ${task.key} ${task.summary}`, MAX_SESSION_NAME),
+    prompt: lines.join('\n'),
+  };
+}
+
+function todoSeed(todo: Todo): SessionSeed {
+  return {
+    itemType: 'todo',
+    itemKey: String(todo.id),
+    sessionName: clip(`todo: ${todo.text}`, MAX_SESSION_NAME),
+    prompt: `todo: ${todo.text}\n\n`,
+  };
+}
+
+/** The per-row session control: open the linked session, or start a new one prefilled with the item. */
+function SessionButton({ seed, actions }: { seed: SessionSeed; actions: SessionActions }) {
+  const links = actions.linksFor(seed.itemType, seed.itemKey);
+  const latest = links[0];
+  const buttonClass = 'inline-flex h-6 items-center gap-1 rounded border px-2 text-[11px] font-medium transition-colors';
+  if (!latest) {
+    return (
+      <button
+        type="button"
+        onClick={() => actions.start(seed)}
+        title="Start a new session with this item's details"
+        className={cn(buttonClass, 'border-border/70 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary')}
+      >
+        <Play className="h-3 w-3" /> Start session
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => actions.open(latest.sessionId)}
+        title={latest.sessionName ? `Open "${latest.sessionName}"` : 'Open the linked session'}
+        className={cn(buttonClass, 'max-w-[14rem] border-primary/40 bg-primary/10 text-primary hover:bg-primary/15')}
+      >
+        <MessagesSquare className="h-3 w-3 shrink-0" />
+        <span className="truncate">Open session{links.length > 1 ? ` (${links.length})` : ''}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => actions.start(seed)}
+        title="Start another session for this item"
+        aria-label="Start another session"
+        className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        onClick={() => actions.unlink(latest)}
+        title="Unlink this session"
+        aria-label="Unlink session"
+        className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
 
 const AUTO_REFRESH_MS = 2 * 60_000;
 const UNDO_WINDOW_MS = 8_000;
@@ -128,7 +235,7 @@ function SourceError({ label, error }: { label: string; error: string }) {
 
 /* ── To-dos ─────────────────────────────────────────────────────── */
 
-function TodoSection({ projectPath, todos, onChange }: { projectPath: string; todos: Todo[]; onChange: (next: Todo[]) => void }) {
+function TodoSection({ projectPath, todos, onChange, sessions }: { projectPath: string; todos: Todo[]; onChange: (next: Todo[]) => void; sessions: SessionActions }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +312,12 @@ function TodoSection({ projectPath, todos, onChange }: { projectPath: string; to
             >
               <Check className="h-3 w-3" strokeWidth={3} />
             </button>
-            <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm">{todo.text}</span>
+            <div className="min-w-0 flex-1">
+              <span className="whitespace-pre-wrap break-words text-sm">{todo.text}</span>
+              <div className="mt-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
+                <SessionButton seed={todoSeed(todo)} actions={sessions} />
+              </div>
+            </div>
             <span className="shrink-0 pt-0.5 text-[11px] text-muted-foreground/70">{timeAgo(todo.createdAt)}</span>
             <button
               type="button"
@@ -258,12 +370,14 @@ function JiraTaskRow({
   actions,
   pending,
   onMove,
+  sessions,
 }: {
   task: JiraTask;
   pullRequests: PullRequest[];
   actions: string[];
   pending: string | null;
   onMove: (task: JiraTask, to: string) => void;
+  sessions: SessionActions;
 }) {
   const hasPr = pullRequests.length > 0;
   const suggestPr = hasPr && PRE_REVIEW_STATUSES.has(task.status.toLowerCase());
@@ -306,7 +420,9 @@ function JiraTaskRow({
           </div>
         </div>
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
+        <SessionButton seed={jiraSeed(task)} actions={sessions} />
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
         {available.map((action) => {
           const isSuggested = suggestPr && action.toLowerCase() === 'pull request';
           const isCancel = action.toLowerCase().startsWith('cancel');
@@ -343,6 +459,7 @@ function JiraSection({
   error,
   prsByKey,
   onTasksChange,
+  sessions,
 }: {
   projectPath: string;
   config: NonNullable<WorkConfig['jira']>;
@@ -350,6 +467,7 @@ function JiraSection({
   error: string | null;
   prsByKey: Map<string, PullRequest[]>;
   onTasksChange: (next: JiraTask[]) => void;
+  sessions: SessionActions;
 }) {
   const [pending, setPending] = useState<Record<string, string>>({});
   const [moved, setMoved] = useState<MovedTask[]>([]);
@@ -497,6 +615,7 @@ function JiraSection({
                     actions={config.actions}
                     pending={pending[task.key] ?? null}
                     onMove={(t, to) => void move(t, to)}
+                    sessions={sessions}
                   />
                 ))}
               </ul>
@@ -586,7 +705,7 @@ function PullRequestSection({ prs, error, jiraUrlFor }: { prs: PullRequest[]; er
 /* ── Panel ──────────────────────────────────────────────────────── */
 
 /** The project's Work tab: personal to-dos, Jira tasks with status buttons, and open pull requests. */
-export default function WorkPanel({ project, config, isVisible }: WorkPanelProps) {
+export default function WorkPanel({ project, config, isVisible, onOpenSession, onStartNewSession }: WorkPanelProps) {
   const projectPath = project.fullPath || project.path || '';
   const [items, setItems] = useState<WorkItems | null>(null);
   const [loading, setLoading] = useState(false);
@@ -613,6 +732,17 @@ export default function WorkPanel({ project, config, isVisible }: WorkPanelProps
     setItems(null);
   }, [projectPath]);
 
+  // Deleting or archiving a session in the sidebar changes the project's
+  // session list; reload so its link disappears right away. Cheap: Jira and
+  // Bitbucket answers come from the server's one-minute cache.
+  const sessionSignature = (project.sessions ?? []).map((s) => s.id).join(',');
+  const lastSignatureRef = useRef(sessionSignature);
+  useEffect(() => {
+    if (lastSignatureRef.current === sessionSignature) return;
+    lastSignatureRef.current = sessionSignature;
+    if (isVisible) void load();
+  }, [isVisible, load, sessionSignature]);
+
   // Load when shown, refresh in the background while visible, and when the window regains focus.
   useEffect(() => {
     if (!isVisible) return undefined;
@@ -638,6 +768,30 @@ export default function WorkPanel({ project, config, isVisible }: WorkPanelProps
     }
     return map;
   }, [prs]);
+
+  const sessions = useMemo<SessionActions>(() => {
+    const links = items?.links ?? [];
+    return {
+      linksFor: (itemType, itemKey) => links.filter((l) => l.itemType === itemType && l.itemKey === itemKey),
+      open: onOpenSession,
+      start: (seed) => {
+        // Prefill the new chat's composer, remember which item it is for, then open a new chat.
+        writeDraftText(`project:${project.projectId}`, seed.prompt);
+        setPendingWorkLink({
+          projectPath,
+          itemType: seed.itemType,
+          itemKey: seed.itemKey,
+          sessionName: seed.sessionName,
+          matchPrefix: seed.prompt.trim().split(/\s+/).slice(0, 3).join(' '),
+        });
+        onStartNewSession();
+      },
+      unlink: (link) => {
+        setItems((cur) => (cur ? { ...cur, links: cur.links.filter((l) => l !== link) } : cur));
+        void workApi.unlink(projectPath, link.itemType, link.itemKey, link.sessionId).catch(() => void load());
+      },
+    };
+  }, [items?.links, load, onOpenSession, onStartNewSession, project.projectId, projectPath]);
 
   const jiraSite = tasks[0]?.url.replace(/\/browse\/.*$/, '') ?? null;
   const jiraUrlFor = useCallback((key: string) => {
@@ -681,6 +835,7 @@ export default function WorkPanel({ project, config, isVisible }: WorkPanelProps
                   projectPath={projectPath}
                   todos={items.todos}
                   onChange={(todos) => setItems((cur) => (cur ? { ...cur, todos } : cur))}
+                  sessions={sessions}
                 />
               )}
               {config.jira && items.jira && (
@@ -691,6 +846,7 @@ export default function WorkPanel({ project, config, isVisible }: WorkPanelProps
                   error={items.jira.error}
                   prsByKey={prsByKey}
                   onTasksChange={(next) => setItems((cur) => (cur && cur.jira ? { ...cur, jira: { ...cur.jira, items: next } } : cur))}
+                  sessions={sessions}
                 />
               )}
             </div>

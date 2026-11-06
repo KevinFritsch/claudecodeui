@@ -2,3 +2,5 @@
 export { default as WorkPanel } from '@/modules/work/WorkPanel';
 export { useWorkConfig } from '@/modules/work/useWorkConfig';
 export type { WorkConfig } from '@/modules/work/api';
+export { consumePendingWorkLink } from '@/modules/work/pendingWorkLink';
+export { workApi } from '@/modules/work/api';

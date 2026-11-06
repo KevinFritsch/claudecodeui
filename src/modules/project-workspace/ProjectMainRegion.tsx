@@ -3,6 +3,7 @@ import { memo, useCallback } from 'react';
 import { useProjectMainState } from '@/modules/project-workspace/context/ProjectsStateContext';
 import type { SessionEstablishedContext, SessionNavigationOptions,ProjectWorkspaceShellProps } from '@/shared/types';
 import WorkspaceMain from '@/modules/project-workspace/WorkspaceMain';
+import { consumePendingWorkLink, workApi } from '@/modules/work';
 
 /** Rendered by ProjectWorkspaceShell to bind this module's project state to WorkspaceMain. */
 function ProjectMainRegion({
@@ -43,7 +44,16 @@ function ProjectMainRegion({
     context: SessionEstablishedContext,
   ) => {
     registerOptimisticSession({ sessionId: targetSessionId, ...context });
-  }, [registerOptimisticSession]);
+
+    // Kvn: a chat started from the Work tab gets linked to its task and named after it.
+    const projectPath = context.project.fullPath || context.project.path || '';
+    const pending = consumePendingWorkLink(projectPath, context.summary);
+    if (pending) {
+      void workApi.link(projectPath, pending.itemType, pending.itemKey, targetSessionId)
+        .catch((error: unknown) => console.warn('[work] could not link session', error));
+      void renameSession(targetSessionId, pending.sessionName);
+    }
+  }, [registerOptimisticSession, renameSession]);
 
   const handleProjectsRefresh = useCallback(() => {
     void refreshProjectsSilently();

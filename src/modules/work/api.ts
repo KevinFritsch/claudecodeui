@@ -51,10 +51,19 @@ export type PullRequest = {
   draft: boolean;
 };
 
+export type WorkLink = {
+  itemType: 'jira' | 'todo';
+  itemKey: string;
+  sessionId: string;
+  sessionName: string | null;
+  createdAt: string;
+};
+
 export type SourceResult<T> = { items: T; error: string | null; fetchedAt: string };
 
 export type WorkItems = {
   todos: Todo[] | null;
+  links: WorkLink[];
   jira: SourceResult<JiraTask[]> | null;
   pullRequests: SourceResult<PullRequest[]> | null;
 };
@@ -84,6 +93,10 @@ export const workApi = {
   updateTodo: (id: number, changes: { text?: string; status?: TodoStatus }) =>
     request<Todo>(`/api/work/todos/${id}`, { method: 'PATCH', body: changes }),
   deleteTodo: (id: number) => request<{ deleted: boolean }>(`/api/work/todos/${id}`, { method: 'DELETE' }),
+  link: (projectPath: string, itemType: WorkLink['itemType'], itemKey: string, sessionId: string) =>
+    request<{ linked: boolean }>('/api/work/links', { method: 'POST', body: { projectPath, itemType, itemKey, sessionId } }),
+  unlink: (projectPath: string, itemType: WorkLink['itemType'], itemKey: string, sessionId: string) =>
+    request<{ linked: boolean }>('/api/work/links', { method: 'DELETE', body: { projectPath, itemType, itemKey, sessionId } }),
   transition: (projectPath: string, key: string, to: string) =>
     request<{ key: string; from: string; to: string }>(`/api/work/jira/${encodeURIComponent(key)}/transition`, {
       method: 'POST',

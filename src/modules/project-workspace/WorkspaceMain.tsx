@@ -19,6 +19,7 @@ import WorkspaceErrorBoundary from '@/modules/project-workspace/WorkspaceErrorBo
 import WorkspaceSplitView from '@/modules/project-workspace/WorkspaceSplitView';
 import WorkspaceProjectTabs from '@/modules/project-workspace/WorkspaceProjectTabs';
 import { useSplitLayout } from '@/modules/project-workspace/hooks/useSplitLayout';
+import { useProjectCommandState } from '@/modules/project-workspace/context/ProjectsStateContext';
 
 const SPLIT_PANE_TABS = new Set<AppTab>(['chat', 'shell', 'files', 'git']);
 const isSplitPaneTab = (tab: AppTab): tab is SplitPaneTab => SPLIT_PANE_TABS.has(tab);
@@ -79,6 +80,7 @@ function WorkspaceMain({
 
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
   const shouldShowBrowserTab = browserUseEnabled;
+  const { handleNewSession } = useProjectCommandState();
   const { config: workConfig, isLoaded: isWorkConfigLoaded } = useWorkConfig(selectedProject?.fullPath || selectedProject?.path);
   const shouldShowWorkTab = Boolean(workConfig);
 
@@ -326,7 +328,16 @@ function WorkspaceMain({
 
           {workConfig && activeTab === 'work' && (
             <div className="h-full overflow-hidden">
-              <WorkPanel project={selectedProject} config={workConfig} isVisible={activeTab === 'work'} />
+              <WorkPanel
+                project={selectedProject}
+                config={workConfig}
+                isVisible={activeTab === 'work'}
+                onOpenSession={(sessionId) => {
+                  setActiveTab('chat');
+                  onNavigateToSession(sessionId);
+                }}
+                onStartNewSession={() => handleNewSession(selectedProject)}
+              />
             </div>
           )}
 
