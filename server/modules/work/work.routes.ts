@@ -10,24 +10,13 @@ import type { Request, Response } from 'express';
 
 import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils.js';
 
-import { listOpenPullRequests, type PullRequest } from './services/bitbucket.service.js';
-import { listMyTasks, transitionIssue, type JiraTask } from './services/jira.service.js';
+import { transitionIssue } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
 import { resolvedService } from './services/resolved.service.js';
-import { listOpenMentions, markDone, postReply, unmarkDone, type SlackMention } from './services/slack.service.js';
+import { markDone, postReply, unmarkDone } from './services/slack.service.js';
+import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
-
-type SourceResult<T> = { items: T; error: string | null; fetchedAt: string };
-
-type RemoteSnapshot = {
-  jira: SourceResult<JiraTask[]> | null;
-  pullRequests: SourceResult<PullRequest[]> | null;
-  slack: SourceResult<SlackMention[]> | null;
-};
-
-const CACHE_TTL_MS = 60_000;
-const snapshotCache = new Map<string, { at: number; value: Promise<RemoteSnapshot> }>();
 
 function readProjectPath(value: unknown): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -44,42 +33,9 @@ function requireConfig(projectPath: string): WorkProjectConfig {
   return config;
 }
 
-async function settle<T>(load: () => Promise<T>, fallback: T): Promise<SourceResult<T>> {
-  const fetchedAt = new Date().toISOString();
-  try {
-    return { items: await load(), error: null, fetchedAt };
-  } catch (error) {
-    console.warn('[work]', (error as Error).message);
-    return { items: fallback, error: (error as Error).message, fetchedAt };
-  }
-}
-
-function loadSnapshot(projectPath: string, config: WorkProjectConfig, force: boolean): Promise<RemoteSnapshot> {
-  const cached = snapshotCache.get(projectPath);
-  if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
-
-  const secrets = readSecrets();
-  const value = (async (): Promise<RemoteSnapshot> => {
-    const [jira, pullRequests, slack] = await Promise.all([
-      config.jira ? settle(() => listMyTasks(secrets, config.jira!), [] as JiraTask[]) : Promise.resolve(null),
-      config.bitbucket ? settle(() => listOpenPullRequests(secrets, config.bitbucket!), [] as PullRequest[]) : Promise.resolve(null),
-      config.slack ? settle(() => listOpenMentions(secrets, config.slack!), [] as SlackMention[]) : Promise.resolve(null),
-    ]);
-    return { jira, pullRequests, slack };
-  })();
-  snapshotCache.set(projectPath, { at: Date.now(), value });
-  // A failed load should not stay cached for a full minute.
-  value.then((snap) => {
-    if (snap.jira?.error || snap.pullRequests?.error || snap.slack?.error) {
-      setTimeout(() => {
-        if (snapshotCache.get(projectPath)?.value === value) snapshotCache.delete(projectPath);
-      }, 10_000);
-    }
-  }).catch(() => snapshotCache.delete(projectPath));
-  return value;
-}
-
 const router = express.Router();
+
+warmAllProjects();
 
 /** Which Work sources a project has; `enabled: false` hides the Work tab. */
 router.get('/config', (req: Request, res: Response) => {
@@ -106,7 +62,7 @@ router.get('/config', (req: Request, res: Response) => {
 router.get('/items', asyncHandler(async (req: Request, res: Response) => {
   const projectPath = readProjectPath(req.query.projectPath);
   const config = requireConfig(projectPath);
-  const snapshot = await loadSnapshot(projectPath, config, req.query.refresh === '1');
+  const { snapshot, fetchedAt, refreshing } = await getSnapshot(projectPath, config, { force: req.query.refresh === '1' });
   // Resolved Slack mentions are hidden from the open list but kept, so they can be brought back.
   const resolvedSlack = resolvedService.keys(projectPath, 'slack');
   const slack = snapshot.slack
@@ -118,6 +74,8 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
     ...snapshot,
     slack,
     slackResolved: snapshot.slack ? snapshot.slack.items.filter((m) => resolvedSlack.has(m.id)) : [],
+    fetchedAt,
+    refreshing,
   }));
 }));
 
@@ -216,7 +174,13 @@ router.post('/slack/done', asyncHandler(async (req: Request, res: Response) => {
   const { projectPath, id } = readSlackId(body);
   const secrets = readSecrets();
   await slackAction(() => (body.done === false ? unmarkDone(secrets, id) : markDone(secrets, id)));
-  snapshotCache.delete(projectPath);
+  if (body.done === false) {
+    markStale(projectPath);
+  } else {
+    patchSnapshot(projectPath, (snap) => {
+      if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => m.id !== id);
+    });
+  }
   res.json(createApiSuccessResponse({ id, done: body.done !== false }));
 }));
 
@@ -228,7 +192,9 @@ router.post('/slack/reply', asyncHandler(async (req: Request, res: Response) => 
   const threadTs = typeof body.threadTs === 'string' ? body.threadTs : '';
   if (!text) throw new AppError('text is required.', { code: 'INVALID_REQUEST', statusCode: 400 });
   const result = await slackAction(() => postReply(readSecrets(), id, threadTs, text.slice(0, 4000)));
-  snapshotCache.delete(projectPath);
+  patchSnapshot(projectPath, (snap) => {
+    if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => m.id !== id);
+  });
   res.json(createApiSuccessResponse({ id, ...result }));
 }));
 
@@ -246,7 +212,13 @@ router.post('/jira/:key/transition', asyncHandler(async (req: Request, res: Resp
   }
   try {
     const result = await transitionIssue(readSecrets(), key, to);
-    snapshotCache.delete(projectPath);
+    patchSnapshot(projectPath, (snap) => {
+      const task = snap.jira?.items.find((t) => t.key === key);
+      if (task) {
+        task.status = result.to;
+        task.updated = new Date().toISOString();
+      }
+    });
     res.json(createApiSuccessResponse({ key, ...result }));
   } catch (error) {
     throw new AppError((error as Error).message, { code: 'JIRA_TRANSITION_FAILED', statusCode: 502 });

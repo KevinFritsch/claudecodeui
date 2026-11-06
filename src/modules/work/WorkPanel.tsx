@@ -36,6 +36,11 @@ type WorkPanelProps = {
 };
 
 const AUTO_REFRESH_MS = 2 * 60_000;
+const REFRESH_POLL_MS = 2_500;
+
+// Last answer per project, kept for the page's lifetime so coming back to the
+// Work tab shows it at once while a fresh copy loads.
+const itemsCache = new Map<string, WorkItems>();
 const UNDO_WINDOW_MS = 8_000;
 
 /** Statuses after which a task is waiting on review, so "Pull Request" is the natural next step once a PR exists. */
@@ -610,30 +615,49 @@ function PullRequestSection({ prs, error, jiraUrlFor }: { prs: PullRequest[]; er
 /** The project's Work tab: personal to-dos, Jira tasks with status buttons, and open pull requests. */
 export default function WorkPanel({ project, config, isVisible, onOpenSession, onStartNewSession }: WorkPanelProps) {
   const projectPath = project.fullPath || project.path || '';
-  const [items, setItems] = useState<WorkItems | null>(null);
+  const [items, setItems] = useState<WorkItems | null>(() => itemsCache.get(projectPath) ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [, forceTick] = useState(0);
+  const pollRef = useRef<number | null>(null);
+  const pollCountRef = useRef(0);
 
-  const load = useCallback(async (refresh = false) => {
+  // `force` waits for fresh data (the refresh button); otherwise the server
+  // answers from memory and reloads in the background, and we poll until the
+  // fresh copy is in.
+  const load = useCallback(async (force = false) => {
     if (!projectPath) return;
-    setLoading(true);
+    if (force) setLoading(true);
     try {
-      const next = await workApi.items(projectPath, refresh);
+      const next = await workApi.items(projectPath, force);
       setItems(next);
       setError(null);
-      setLoadedAt(Date.now());
+      if (pollRef.current) window.clearTimeout(pollRef.current);
+      pollRef.current = null;
+      if (next.refreshing && pollCountRef.current < 8) {
+        pollCountRef.current += 1;
+        pollRef.current = window.setTimeout(() => void load(), REFRESH_POLL_MS);
+      } else {
+        pollCountRef.current = 0;
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (force) setLoading(false);
     }
   }, [projectPath]);
 
+  useEffect(() => () => {
+    if (pollRef.current) window.clearTimeout(pollRef.current);
+  }, []);
+
   useEffect(() => {
-    setItems(null);
+    setItems(itemsCache.get(projectPath) ?? null);
   }, [projectPath]);
+
+  useEffect(() => {
+    if (items && projectPath) itemsCache.set(projectPath, items);
+  }, [items, projectPath]);
 
   // Deleting or archiving a session in the sidebar changes the project's
   // session list; reload so its link disappears right away. Cheap: Jira and
@@ -662,7 +686,11 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
   }, [isVisible, load]);
 
   const prs = useMemo(() => items?.pullRequests?.items ?? [], [items]);
-  const tasks = useMemo(() => items?.jira?.items ?? [], [items]);
+  // A task moved out of the listed statuses (e.g. to QA) stays in the server's copy until its next reload.
+  const tasks = useMemo(() => {
+    const listed = new Set((config.jira?.statuses ?? []).map((s) => s.toLowerCase()));
+    return (items?.jira?.items ?? []).filter((t) => listed.has(t.status.toLowerCase()));
+  }, [config.jira?.statuses, items]);
 
   const prsByKey = useMemo(() => {
     const map = new Map<string, PullRequest[]>();
@@ -779,14 +807,20 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex flex-shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2">
         <h2 className="text-sm font-semibold">{config.name ?? project.displayName} · Work</h2>
-        <span className="text-xs text-muted-foreground">{loadedAt ? `updated ${timeAgo(new Date(loadedAt).toISOString())}` : ''}</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground" title={items ? `Last loaded ${new Date(items.fetchedAt).toLocaleString()}` : undefined}>
+          {items?.refreshing || loading ? (
+            <><Loader2 className="h-3 w-3 animate-spin" /> refreshing…</>
+          ) : items ? (
+            `updated ${timeAgo(items.fetchedAt)}`
+          ) : null}
+        </span>
         <button
           type="button"
           onClick={() => void load(true)}
           disabled={loading}
           title="Refresh"
           aria-label="Refresh"
-          className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
         >
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
         </button>

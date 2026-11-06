@@ -86,6 +86,10 @@ export type WorkItems = {
   slack: SourceResult<SlackMention[]> | null;
   /** Mentions the user set aside on the dashboard (still open in Slack). */
   slackResolved: SlackMention[];
+  /** When the server last finished loading Jira, Bitbucket and Slack. */
+  fetchedAt: string;
+  /** True while the server is reloading them in the background. */
+  refreshing: boolean;
 };
 
 async function request<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {

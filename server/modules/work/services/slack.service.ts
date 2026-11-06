@@ -8,6 +8,7 @@
  * call; answered messages are remembered so only open ones are re-checked.
  */
 
+import { EMOJI_SHORTCODES } from './emoji-shortcodes.js';
 import type { WorkSecrets } from './work-config.service.js';
 
 export type SlackProjectConfig = {
@@ -116,7 +117,10 @@ async function renderText(slack: SlackClient, raw: string): Promise<string> {
     .replace(/<(https?:[^|>]+)\|([^>]+)>/g, '$2 ($1)')
     .replace(/<(https?:[^>]+)>/g, '$1')
     .replace(/<mailto:[^|>]+\|([^>]+)>/g, '$1')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    // :wave: → 👋 (skin tones dropped; workspace custom emoji stay as text).
+    .replace(/:skin-tone-\d:/g, '')
+    .replace(/:([a-z0-9_+'-]+):/gi, (whole, name: string) => EMOJI_SHORTCODES[name.toLowerCase()] ?? whole);
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
