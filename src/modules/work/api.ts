@@ -5,6 +5,7 @@ export type WorkConfig = {
   name: string | null;
   jira: { projectKey: string; statuses: string[]; collapsedStatuses: string[]; actions: string[] } | null;
   bitbucket: { workspace: string; repos: string[] } | null;
+  slack: { lookbackDays: number } | null;
   todos: boolean;
 };
 
@@ -51,8 +52,23 @@ export type PullRequest = {
   draft: boolean;
 };
 
+export type SlackMention = {
+  id: string;
+  channelId: string;
+  channelName: string;
+  channelKind: 'channel' | 'private' | 'dm' | 'group';
+  ts: string;
+  threadTs: string;
+  author: string;
+  authorId: string | null;
+  text: string;
+  permalink: string;
+  myReactions: string[];
+  replyCount: number;
+};
+
 export type WorkLink = {
-  itemType: 'jira' | 'todo';
+  itemType: 'jira' | 'todo' | 'slack';
   itemKey: string;
   sessionId: string;
   sessionName: string | null;
@@ -66,6 +82,7 @@ export type WorkItems = {
   links: WorkLink[];
   jira: SourceResult<JiraTask[]> | null;
   pullRequests: SourceResult<PullRequest[]> | null;
+  slack: SourceResult<SlackMention[]> | null;
 };
 
 async function request<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {
@@ -97,6 +114,10 @@ export const workApi = {
     request<{ linked: boolean }>('/api/work/links', { method: 'POST', body: { projectPath, itemType, itemKey, sessionId } }),
   unlink: (projectPath: string, itemType: WorkLink['itemType'], itemKey: string, sessionId: string) =>
     request<{ linked: boolean }>('/api/work/links', { method: 'DELETE', body: { projectPath, itemType, itemKey, sessionId } }),
+  slackDone: (projectPath: string, id: string, done: boolean) =>
+    request<{ id: string; done: boolean }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done } }),
+  slackReply: (projectPath: string, id: string, threadTs: string, text: string) =>
+    request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text } }),
   transition: (projectPath: string, key: string, to: string) =>
     request<{ key: string; from: string; to: string }>(`/api/work/jira/${encodeURIComponent(key)}/transition`, {
       method: 'POST',

@@ -22,6 +22,8 @@ import type { Project } from '@/shared/types';
 import { writeDraftText } from '@/shared/chatDrafts';
 import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, type WorkItems, type WorkLink } from '@/modules/work/api';
 import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
+import { SessionButton, jiraSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
+import SlackSection from '@/modules/work/SlackSection';
 
 type WorkPanelProps = {
   project: Project;
@@ -32,105 +34,6 @@ type WorkPanelProps = {
   /** Opens a new, empty chat in this project (its composer shows the project draft). */
   onStartNewSession: () => void;
 };
-
-/** What a row needs to show and start its linked sessions. */
-type SessionActions = {
-  linksFor: (itemType: WorkLink['itemType'], itemKey: string) => WorkLink[];
-  start: (item: SessionSeed) => void;
-  open: (sessionId: string) => void;
-  unlink: (link: WorkLink) => void;
-};
-
-type SessionSeed = {
-  itemType: WorkLink['itemType'];
-  itemKey: string;
-  /** Session title, e.g. "jira: GOL-3581 Cashback ledger line". */
-  sessionName: string;
-  /** Text prefilled in the new chat's composer. */
-  prompt: string;
-};
-
-const MAX_SESSION_NAME = 80;
-
-function clip(text: string, max: number): string {
-  const single = text.replace(/\s+/g, ' ').trim();
-  return single.length > max ? `${single.slice(0, max - 1).trimEnd()}…` : single;
-}
-
-function jiraSeed(task: JiraTask): SessionSeed {
-  const lines = [
-    `jira: ${task.key} ${task.summary}`,
-    task.url,
-    `Status: ${task.status}${task.sprint ? ` · ${task.sprint.name}` : ' · Backlog'}`,
-    '',
-    '',
-  ];
-  return {
-    itemType: 'jira',
-    itemKey: task.key,
-    sessionName: clip(`jira: ${task.key} ${task.summary}`, MAX_SESSION_NAME),
-    prompt: lines.join('\n'),
-  };
-}
-
-function todoSeed(todo: Todo): SessionSeed {
-  return {
-    itemType: 'todo',
-    itemKey: String(todo.id),
-    sessionName: clip(`todo: ${todo.text}`, MAX_SESSION_NAME),
-    prompt: `todo: ${todo.text}\n\n`,
-  };
-}
-
-/** The per-row session control: open the linked session, or start a new one prefilled with the item. */
-function SessionButton({ seed, actions }: { seed: SessionSeed; actions: SessionActions }) {
-  const links = actions.linksFor(seed.itemType, seed.itemKey);
-  const latest = links[0];
-  const buttonClass = 'inline-flex h-6 items-center gap-1 rounded border px-2 text-[11px] font-medium transition-colors';
-  if (!latest) {
-    return (
-      <button
-        type="button"
-        onClick={() => actions.start(seed)}
-        title="Start a new session with this item's details"
-        className={cn(buttonClass, 'border-border/70 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary')}
-      >
-        <Play className="h-3 w-3" /> Start session
-      </button>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1">
-      <button
-        type="button"
-        onClick={() => actions.open(latest.sessionId)}
-        title={latest.sessionName ? `Open "${latest.sessionName}"` : 'Open the linked session'}
-        className={cn(buttonClass, 'max-w-[14rem] border-primary/40 bg-primary/10 text-primary hover:bg-primary/15')}
-      >
-        <MessagesSquare className="h-3 w-3 shrink-0" />
-        <span className="truncate">Open session{links.length > 1 ? ` (${links.length})` : ''}</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => actions.start(seed)}
-        title="Start another session for this item"
-        aria-label="Start another session"
-        className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        <Plus className="h-3 w-3" />
-      </button>
-      <button
-        type="button"
-        onClick={() => actions.unlink(latest)}
-        title="Unlink this session"
-        aria-label="Unlink session"
-        className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </span>
-  );
-}
 
 const AUTO_REFRESH_MS = 2 * 60_000;
 const UNDO_WINDOW_MS = 8_000;
@@ -851,6 +754,15 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
               )}
             </div>
             <div className="flex min-w-0 flex-col gap-5">
+              {config.slack && items.slack && (
+                <SlackSection
+                  projectPath={projectPath}
+                  mentions={items.slack.items}
+                  error={items.slack.error}
+                  sessions={sessions}
+                  onMentionsChange={(next) => setItems((cur) => (cur && cur.slack ? { ...cur, slack: { ...cur.slack, items: next } } : cur))}
+                />
+              )}
               {config.bitbucket && items.pullRequests && (
                 <PullRequestSection prs={prs} error={items.pullRequests.error} jiraUrlFor={jiraUrlFor} />
               )}

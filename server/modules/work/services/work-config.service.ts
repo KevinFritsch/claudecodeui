@@ -16,6 +16,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import type { SlackProjectConfig } from './slack.service.js';
+
 export type JiraProjectConfig = {
   projectKey: string;
   /** Statuses listed on the dashboard, in display order. */
@@ -37,6 +39,7 @@ export type WorkProjectConfig = {
   name?: string;
   jira?: JiraProjectConfig;
   bitbucket?: BitbucketProjectConfig;
+  slack?: SlackProjectConfig;
   todos?: boolean;
 };
 

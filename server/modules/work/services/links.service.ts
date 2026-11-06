@@ -6,7 +6,7 @@
 
 import { getConnection } from '@/modules/database/index.js';
 
-export type WorkItemType = 'jira' | 'todo';
+export type WorkItemType = 'jira' | 'todo' | 'slack';
 
 export type WorkLink = {
   itemType: WorkItemType;

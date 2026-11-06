@@ -7,7 +7,7 @@
 
 export type PendingWorkLink = {
   projectPath: string;
-  itemType: 'jira' | 'todo';
+  itemType: 'jira' | 'todo' | 'slack';
   itemKey: string;
   /** Name given to the session once it exists, e.g. "jira: GOL-3581 Cashback ledger". */
   sessionName: string;

@@ -13,6 +13,7 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 import { listOpenPullRequests, type PullRequest } from './services/bitbucket.service.js';
 import { listMyTasks, transitionIssue, type JiraTask } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
+import { listOpenMentions, markDone, postReply, unmarkDone, type SlackMention } from './services/slack.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
 
@@ -21,6 +22,7 @@ type SourceResult<T> = { items: T; error: string | null; fetchedAt: string };
 type RemoteSnapshot = {
   jira: SourceResult<JiraTask[]> | null;
   pullRequests: SourceResult<PullRequest[]> | null;
+  slack: SourceResult<SlackMention[]> | null;
 };
 
 const CACHE_TTL_MS = 60_000;
@@ -57,16 +59,17 @@ function loadSnapshot(projectPath: string, config: WorkProjectConfig, force: boo
 
   const secrets = readSecrets();
   const value = (async (): Promise<RemoteSnapshot> => {
-    const [jira, pullRequests] = await Promise.all([
+    const [jira, pullRequests, slack] = await Promise.all([
       config.jira ? settle(() => listMyTasks(secrets, config.jira!), [] as JiraTask[]) : Promise.resolve(null),
       config.bitbucket ? settle(() => listOpenPullRequests(secrets, config.bitbucket!), [] as PullRequest[]) : Promise.resolve(null),
+      config.slack ? settle(() => listOpenMentions(secrets, config.slack!), [] as SlackMention[]) : Promise.resolve(null),
     ]);
-    return { jira, pullRequests };
+    return { jira, pullRequests, slack };
   })();
   snapshotCache.set(projectPath, { at: Date.now(), value });
   // A failed load should not stay cached for a full minute.
   value.then((snap) => {
-    if (snap.jira?.error || snap.pullRequests?.error) {
+    if (snap.jira?.error || snap.pullRequests?.error || snap.slack?.error) {
       setTimeout(() => {
         if (snapshotCache.get(projectPath)?.value === value) snapshotCache.delete(projectPath);
       }, 10_000);
@@ -93,6 +96,7 @@ router.get('/config', (req: Request, res: Response) => {
         }
       : null,
     bitbucket: config?.bitbucket ? { workspace: config.bitbucket.workspace, repos: config.bitbucket.repos } : null,
+    slack: config?.slack ? { lookbackDays: config.slack.lookbackDays ?? 7 } : null,
     todos: Boolean(config?.todos),
   }));
 });
@@ -142,8 +146,8 @@ function readLinkBody(body: Record<string, unknown>): { projectPath: string; ite
   const projectPath = readProjectPath(body.projectPath);
   requireConfig(projectPath);
   const itemType = body.itemType;
-  if (itemType !== 'jira' && itemType !== 'todo') {
-    throw new AppError('itemType must be jira or todo.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  if (itemType !== 'jira' && itemType !== 'todo' && itemType !== 'slack') {
+    throw new AppError('itemType must be jira, todo or slack.', { code: 'INVALID_REQUEST', statusCode: 400 });
   }
   const itemKey = typeof body.itemKey === 'string' || typeof body.itemKey === 'number' ? String(body.itemKey).trim() : '';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
@@ -164,6 +168,45 @@ router.delete('/links', asyncHandler(async (req: Request, res: Response) => {
   const link = readLinkBody((req.body ?? {}) as Record<string, unknown>);
   linksService.remove(link.projectPath, link.itemType, link.itemKey, link.sessionId);
   res.json(createApiSuccessResponse({ linked: false }));
+}));
+
+function readSlackId(body: Record<string, unknown>): { projectPath: string; id: string } {
+  const projectPath = readProjectPath(body.projectPath);
+  const config = requireConfig(projectPath);
+  if (!config.slack) throw new AppError('Slack is not set up for this project.', { code: 'WORK_NOT_CONFIGURED', statusCode: 404 });
+  const id = typeof body.id === 'string' ? body.id : '';
+  if (!/^[A-Z0-9]+:\d+\.\d+$/.test(id)) throw new AppError('Invalid Slack message id.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  return { projectPath, id };
+}
+
+async function slackAction<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    throw new AppError((error as Error).message, { code: 'SLACK_ACTION_FAILED', statusCode: 502 });
+  }
+}
+
+/** ✅ a Slack message as the user (or undo it with done=false). */
+router.post('/slack/done', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const { projectPath, id } = readSlackId(body);
+  const secrets = readSecrets();
+  await slackAction(() => (body.done === false ? unmarkDone(secrets, id) : markDone(secrets, id)));
+  snapshotCache.delete(projectPath);
+  res.json(createApiSuccessResponse({ id, done: body.done !== false }));
+}));
+
+/** Replies in the message's thread, as the user. */
+router.post('/slack/reply', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const { projectPath, id } = readSlackId(body);
+  const text = typeof body.text === 'string' ? body.text.trim() : '';
+  const threadTs = typeof body.threadTs === 'string' ? body.threadTs : '';
+  if (!text) throw new AppError('text is required.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  const result = await slackAction(() => postReply(readSecrets(), id, threadTs, text.slice(0, 4000)));
+  snapshotCache.delete(projectPath);
+  res.json(createApiSuccessResponse({ id, ...result }));
 }));
 
 /** Moves a Jira issue to another status by name; answers with the status it came from so the UI can undo. */
