@@ -1,10 +1,10 @@
-import { MessageSquare, Terminal, Folder, GitBranch, ClipboardCheck, MonitorPlay, type LucideIcon } from 'lucide-react';
+import { MessagesSquare, ClipboardCheck, ListTodo, MonitorPlay, type LucideIcon } from 'lucide-react';
 import { Fragment } from 'react';
 import type { Dispatch, KeyboardEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Tooltip, PillBar, Pill } from '@/shared/ui';
-import type { AppTab } from '@/shared/types';
+import type { AppTab, SplitPaneTab } from '@/shared/types';
 import { usePlugins,PluginIcon } from '@/modules/plugins';
 
 type WorkspaceTabsProps = {
@@ -12,7 +12,13 @@ type WorkspaceTabsProps = {
   setActiveTab: Dispatch<SetStateAction<AppTab>>;
   shouldShowTasksTab: boolean;
   shouldShowBrowserTab: boolean;
+  /** The focused split pane's own tab; the Sessions tab returns to it. */
+  sessionsTab: SplitPaneTab;
+  /** Whether the project has a Work dashboard (see ~/.config/kvn-work/projects.json). */
+  shouldShowWorkTab: boolean;
 };
+
+const SESSION_VIEW_TABS = new Set<AppTab>(['chat', 'shell', 'files', 'git']);
 
 type BuiltInTab = {
   kind: 'builtin';
@@ -31,12 +37,16 @@ type PluginTab = {
 
 type TabDefinition = BuiltInTab | PluginTab;
 
-const BASE_TABS: BuiltInTab[] = [
-  { kind: 'builtin', id: 'chat',  labelKey: 'tabs.chat',  icon: MessageSquare },
-  { kind: 'builtin', id: 'shell', labelKey: 'tabs.shell', icon: Terminal },
-  { kind: 'builtin', id: 'files', labelKey: 'tabs.files', icon: Folder },
-  { kind: 'builtin', id: 'git',   labelKey: 'tabs.git',   icon: GitBranch },
-];
+// Kvn: Chat/Shell/Files/Source Control belong to each session pane (its own
+// tab strip), so the header only carries project-level views.
+const SESSIONS_TAB_LABEL = 'Sessions';
+
+const WORK_TAB: BuiltInTab = {
+  kind: 'builtin',
+  id: 'work',
+  labelKey: 'Work',
+  icon: ListTodo,
+};
 
 const BROWSER_TAB: BuiltInTab = {
   kind: 'builtin',
@@ -58,12 +68,16 @@ export default function WorkspaceTabs({
   setActiveTab,
   shouldShowTasksTab,
   shouldShowBrowserTab,
+  sessionsTab,
+  shouldShowWorkTab,
 }: WorkspaceTabsProps) {
   const { t } = useTranslation();
   const { plugins } = usePlugins();
 
+  const sessionsTabDef: BuiltInTab = { kind: 'builtin', id: sessionsTab, labelKey: SESSIONS_TAB_LABEL, icon: MessagesSquare };
   const builtInTabs: BuiltInTab[] = [
-    ...BASE_TABS,
+    sessionsTabDef,
+    ...(shouldShowWorkTab ? [WORK_TAB] : []),
     ...(shouldShowBrowserTab ? [BROWSER_TAB] : []),
     ...(shouldShowTasksTab ? [TASKS_TAB] : []),
   ];
@@ -106,8 +120,8 @@ export default function WorkspaceTabs({
       className="min-w-max border border-border/40 bg-muted/50 shadow-inner shadow-black/[0.025] dark:shadow-black/10"
     >
       {tabs.map((tab, index) => {
-        const isActive = tab.id === activeTab;
-        const displayLabel = tab.kind === 'builtin' ? t(tab.labelKey) : tab.label;
+        const isActive = tab === sessionsTabDef ? SESSION_VIEW_TABS.has(activeTab) : tab.id === activeTab;
+        const displayLabel = tab.kind === 'builtin' ? t(tab.labelKey, { defaultValue: tab.labelKey }) : tab.label;
 
         return (
           <Fragment key={`${tab.id}-${index}`}>

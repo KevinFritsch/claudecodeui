@@ -49,6 +49,7 @@ import {
     scheduledMessagesRoutes,
 } from './modules/scheduled-messages/index.js';
 import { closeSessionTopics, initializeSessionTopics } from './modules/session-topics/index.js';
+import { workRoutes } from './modules/work/index.js';
 import { closeSessionWarmup, initializeSessionWarmup, sessionWarmupRoutes } from './modules/session-warmup/index.js';
 import browserUseRoutes from './modules/browser-use/browser-use.routes.js';
 import { assetsRoutes } from './modules/assets/index.js';
@@ -201,6 +202,8 @@ app.use('/api/browser-use', authenticateToken, browserUseRoutes);
 app.use('/api/providers', authenticateToken, providerRoutes);
 app.use('/api/scheduled-messages', authenticateToken, scheduledMessagesRoutes);
 app.use('/api/session-warmup', authenticateToken, sessionWarmupRoutes);
+// Kvn: per-project Work dashboard (Jira, Bitbucket, to-dos)
+app.use('/api/work', authenticateToken, workRoutes);
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);

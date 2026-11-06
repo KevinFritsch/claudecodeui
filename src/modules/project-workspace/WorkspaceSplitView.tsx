@@ -294,6 +294,31 @@ export default function WorkspaceSplitView({
                 </div>
               )}
 
+              {/* Kvn: a lone pane has no header, so its view switcher sits in a slim strip
+                  (the workspace header now only holds project-level tabs). */}
+              {!isSplit && hasChat && pane.project && (
+                <div role="tablist" aria-label="Session view" className="flex h-8 flex-shrink-0 items-center gap-0.5 border-b border-border/60 px-2">
+                  {PANE_TABS.map(({ tab, label, Icon }) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={pane.tab === tab}
+                      onClick={() => onPaneTabChange(pane.paneId, tab)}
+                      className={cn(
+                        'flex h-6 items-center gap-1.5 rounded px-2 text-xs transition-colors',
+                        pane.tab === tab
+                          ? 'bg-accent font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="min-h-0 flex-1">
                 {hasChat ? (
                   renderPane(pane)

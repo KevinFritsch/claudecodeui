@@ -8,6 +8,7 @@ import { PluginTabContent } from '@/modules/plugins';
 import { BrowserUsePanel, useBrowserUseEnabled } from '@/modules/browser-use';
 import { usePaletteOpsRegister } from '@/modules/command-palette';
 import { TaskMasterPanel, useTaskMasterProjectSync, useTasksSettings } from '@/modules/task-master';
+import { WorkPanel, useWorkConfig } from '@/modules/work';
 import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, ResolvedSplitPane, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab, SplitPaneTab } from '@/shared/types';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useFileOpenResolver } from '@/modules/project-workspace/hooks/useFileOpenResolver';
@@ -78,6 +79,8 @@ function WorkspaceMain({
 
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
   const shouldShowBrowserTab = browserUseEnabled;
+  const { config: workConfig, isLoaded: isWorkConfigLoaded } = useWorkConfig(selectedProject?.fullPath || selectedProject?.path);
+  const shouldShowWorkTab = Boolean(workConfig);
 
   const {
     editingFile,
@@ -110,6 +113,14 @@ function WorkspaceMain({
       setActiveTab('chat');
     }
   }, [shouldShowBrowserTab, activeTab, setActiveTab]);
+
+  // Leave the Work tab when the project has no Work config, once that is known
+  // (so a restored "work" tab survives the config request).
+  useEffect(() => {
+    if (activeTab === 'work' && isWorkConfigLoaded && !shouldShowWorkTab) {
+      setActiveTab('chat');
+    }
+  }, [activeTab, isWorkConfigLoaded, shouldShowWorkTab, setActiveTab]);
 
   // Stable so React.memo(ChatInterface) can bail out: an inline arrow here made
   // every WorkspaceMain render re-render the whole chat tree, including during
@@ -282,6 +293,8 @@ function WorkspaceMain({
         selectedSession={selectedSession}
         shouldShowTasksTab={shouldShowTasksTab}
         shouldShowBrowserTab={shouldShowBrowserTab}
+        sessionsTab={focusedPaneTab}
+        shouldShowWorkTab={shouldShowWorkTab}
         isMobile={isMobile}
         onMenuClick={onMenuClick}
         onRenameSession={onRenameSession}
@@ -310,6 +323,12 @@ function WorkspaceMain({
           />
 
           {shouldShowTasksTab && <TaskMasterPanel isVisible={activeTab === 'tasks'} />}
+
+          {workConfig && activeTab === 'work' && (
+            <div className="h-full overflow-hidden">
+              <WorkPanel project={selectedProject} config={workConfig} isVisible={activeTab === 'work'} />
+            </div>
+          )}
 
           {shouldShowBrowserTab && activeTab === 'browser' && (
             <div className="h-full overflow-hidden">

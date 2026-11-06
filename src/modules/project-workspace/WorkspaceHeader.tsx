@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, Columns2, Grid2x2, Rows2, Square } from 'luc
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { AppTab, Project, ProjectSession, SplitLayoutMode } from '@/shared/types';
+import type { AppTab, Project, ProjectSession, SplitLayoutMode, SplitPaneTab } from '@/shared/types';
 import { cn } from '@/shared/utils';
 import MobileMenuButton from '@/modules/project-workspace/MobileMenuButton';
 import WorkspaceConnectionStatus from '@/modules/project-workspace/WorkspaceConnectionStatus';
@@ -16,6 +16,8 @@ type WorkspaceHeaderProps = {
   selectedSession: ProjectSession | null;
   shouldShowTasksTab: boolean;
   shouldShowBrowserTab: boolean;
+  sessionsTab: SplitPaneTab;
+  shouldShowWorkTab: boolean;
   isMobile: boolean;
   onMenuClick: () => void;
   /** Persists a new title for a session; resolves false when the backend refuses it. */
@@ -42,6 +44,8 @@ export default function WorkspaceHeader({
   selectedSession,
   shouldShowTasksTab,
   shouldShowBrowserTab,
+  sessionsTab,
+  shouldShowWorkTab,
   isMobile,
   onMenuClick,
   onRenameSession,
@@ -143,6 +147,8 @@ export default function WorkspaceHeader({
                 setActiveTab={setActiveTab}
                 shouldShowTasksTab={shouldShowTasksTab}
                 shouldShowBrowserTab={shouldShowBrowserTab}
+                sessionsTab={sessionsTab}
+                shouldShowWorkTab={shouldShowWorkTab}
               />
             </div>
             {canScrollRight && (

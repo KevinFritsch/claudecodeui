@@ -49,21 +49,21 @@ test('a task folder of repos lists each repo and git calls can target one', asyn
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  const repos = await (await fetch(`${server.base}/repos?project=p`)).json();
+  const repos = (await (await fetch(`${server.base}/repos?project=p`)).json()) as any;
   assert.equal(repos.nested, true);
   assert.deepEqual(
     repos.repos.map((r: { path: string; branch: string; changes: number }) => [r.path, r.branch, r.changes]),
     [['golfn-api', 'feat/x', 0], ['golfn-app', 'feat/y', 1]],
   );
 
-  const rootStatus = await (await fetch(`${server.base}/status?project=p`)).json();
+  const rootStatus = (await (await fetch(`${server.base}/status?project=p`)).json()) as any;
   assert.equal(rootStatus.notGitRepository, true);
 
-  const appStatus = await (await fetch(`${server.base}/status?project=p&repo=golfn-app`)).json();
+  const appStatus = (await (await fetch(`${server.base}/status?project=p&repo=golfn-app`)).json()) as any;
   assert.equal(appStatus.branch, 'feat/y');
   assert.deepEqual(appStatus.untracked, ['b.txt']);
 
-  const escape = await (await fetch(`${server.base}/status?project=p&repo=../..`)).json();
+  const escape = (await (await fetch(`${server.base}/status?project=p&repo=../..`)).json()) as any;
   assert.equal(escape.branch, undefined);
   assert.ok(escape.error);
 });
@@ -77,7 +77,7 @@ test('a project that is itself a repo is reported as a single, non-nested repo',
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  const repos = await (await fetch(`${server.base}/repos?project=p`)).json();
+  const repos = (await (await fetch(`${server.base}/repos?project=p`)).json()) as any;
   assert.equal(repos.nested, false);
   assert.equal(repos.repos.length, 1);
   assert.equal(repos.repos[0].path, '.');
