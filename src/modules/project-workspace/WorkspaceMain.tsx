@@ -8,7 +8,7 @@ import { PluginTabContent } from '@/modules/plugins';
 import { BrowserUsePanel, useBrowserUseEnabled } from '@/modules/browser-use';
 import { usePaletteOpsRegister } from '@/modules/command-palette';
 import { TaskMasterPanel, useTaskMasterProjectSync, useTasksSettings } from '@/modules/task-master';
-import { WorkPanel, useWorkConfig } from '@/modules/work';
+import { WorkPanel, useWorkBadge, useWorkConfig } from '@/modules/work';
 import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, ResolvedSplitPane, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab, SplitPaneTab } from '@/shared/types';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useFileOpenResolver } from '@/modules/project-workspace/hooks/useFileOpenResolver';
@@ -83,6 +83,7 @@ function WorkspaceMain({
   const { handleNewSession } = useProjectCommandState();
   const { config: workConfig, isLoaded: isWorkConfigLoaded } = useWorkConfig(selectedProject?.fullPath || selectedProject?.path);
   const shouldShowWorkTab = Boolean(workConfig);
+  const workBadge = useWorkBadge(selectedProject?.fullPath || selectedProject?.path, shouldShowWorkTab, activeTab === 'work');
 
   const {
     editingFile,
@@ -297,6 +298,7 @@ function WorkspaceMain({
         shouldShowBrowserTab={shouldShowBrowserTab}
         sessionsTab={focusedPaneTab}
         shouldShowWorkTab={shouldShowWorkTab}
+        workBadge={workBadge}
         isMobile={isMobile}
         onMenuClick={onMenuClick}
         onRenameSession={onRenameSession}

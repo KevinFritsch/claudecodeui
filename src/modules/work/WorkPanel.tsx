@@ -24,6 +24,7 @@ import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, t
 import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
 import { SessionButton, jiraSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
 import SlackSection from '@/modules/work/SlackSection';
+import { WORK_SEEN_EVENT } from '@/modules/work/useWorkBadge';
 
 type WorkPanelProps = {
   project: Project;
@@ -279,8 +280,10 @@ function JiraTaskRow({
   pending,
   onMove,
   sessions,
+  isNew,
 }: {
   task: JiraTask;
+  isNew: boolean;
   pullRequests: PullRequest[];
   actions: string[];
   pending: string | null;
@@ -296,6 +299,7 @@ function JiraTaskRow({
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <a href={task.url} target="_blank" rel="noreferrer" className="group/link block min-w-0">
+            {isNew && <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-red-500 align-middle" title="New since you last looked" />}
             <span className="mr-1.5 font-mono text-xs text-muted-foreground group-hover/link:text-primary">{task.key}</span>
             <span className="text-sm text-foreground group-hover/link:underline">{task.summary}</span>
           </a>
@@ -366,6 +370,7 @@ function JiraSection({
   tasks,
   error,
   prsByKey,
+  newKeys,
   onTasksChange,
   sessions,
 }: {
@@ -374,6 +379,7 @@ function JiraSection({
   tasks: JiraTask[];
   error: string | null;
   prsByKey: Map<string, PullRequest[]>;
+  newKeys: Set<string>;
   onTasksChange: (next: JiraTask[]) => void;
   sessions: SessionActions;
 }) {
@@ -520,6 +526,7 @@ function JiraSection({
                     key={task.key}
                     task={task}
                     pullRequests={prsByKey.get(task.key) ?? []}
+                    isNew={newKeys.has(`jira:${task.key}`)}
                     actions={config.actions}
                     pending={pending[task.key] ?? null}
                     onMove={(t, to) => void move(t, to)}
@@ -659,6 +666,21 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
     if (items && projectPath) itemsCache.set(projectPath, items);
   }, [items, projectPath]);
 
+  // What was new when the tab opened keeps its marker while the tab stays open;
+  // everything shown is then recorded as seen, which clears the tab's badge.
+  const [newKeys, setNewKeys] = useState<Set<string>>(() => new Set());
+  const markedRef = useRef('');
+  useEffect(() => {
+    if (!items || !isVisible) return;
+    if (items.newKeys?.length) setNewKeys((prev) => new Set([...prev, ...items.newKeys]));
+    const signature = (items.currentKeys ?? []).join('|');
+    if (!signature || signature === markedRef.current) return;
+    markedRef.current = signature;
+    workApi.markSeen(projectPath, items.currentKeys)
+      .then(() => window.dispatchEvent(new Event(WORK_SEEN_EVENT)))
+      .catch(() => undefined);
+  }, [isVisible, items, projectPath]);
+
   // Deleting or archiving a session in the sidebar changes the project's
   // session list; reload so its link disappears right away. Cheap: Jira and
   // Bitbucket answers come from the server's one-minute cache.
@@ -769,6 +791,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
               tasks={tasks}
               error={items.jira.error}
               prsByKey={prsByKey}
+              newKeys={newKeys}
               onTasksChange={(next) => setItems((cur) => (cur && cur.jira ? { ...cur, jira: { ...cur.jira, items: next } } : cur))}
               sessions={sessions}
             />
@@ -785,6 +808,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
           projectPath={projectPath}
           mentions={items.slack.items}
           resolved={items.slackResolved ?? []}
+          newKeys={newKeys}
           error={items.slack.error}
           sessions={sessions}
           onChange={(next) => setItems((cur) => (cur && cur.slack

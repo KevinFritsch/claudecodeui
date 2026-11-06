@@ -13,6 +13,8 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 import { transitionIssue } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
 import { resolvedService } from './services/resolved.service.js';
+import { seenService } from './services/seen.service.js';
+import type { RemoteSnapshot } from './services/snapshot.service.js';
 import { markDone, postReply, unmarkDone } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
@@ -59,6 +61,34 @@ router.get('/config', (req: Request, res: Response) => {
 });
 
 /** Everything the dashboard shows. Remote sources are cached for a minute; `refresh=1` skips the cache. */
+/** Keys of what can be "new": open Slack mentions (not resolved here) and Jira tasks in the listed statuses. */
+function attentionKeys(projectPath: string, config: WorkProjectConfig, snapshot: RemoteSnapshot): string[] {
+  const resolvedSlack = resolvedService.keys(projectPath, 'slack');
+  const listed = new Set((config.jira?.statuses ?? []).map((s) => s.toLowerCase()));
+  return [
+    ...(snapshot.slack?.items ?? []).filter((m) => !resolvedSlack.has(m.id)).map((m) => `slack:${m.id}`),
+    ...(snapshot.jira?.items ?? []).filter((t) => listed.has(t.status.toLowerCase())).map((t) => `jira:${t.key}`),
+  ];
+}
+
+/** How many items are new since the user last opened the Work tab; polled by the tab badge. */
+router.get('/badge', asyncHandler(async (req: Request, res: Response) => {
+  const projectPath = readProjectPath(req.query.projectPath);
+  const config = requireConfig(projectPath);
+  const { snapshot } = await getSnapshot(projectPath, config);
+  res.json(createApiSuccessResponse({ count: seenService.unseen(projectPath, attentionKeys(projectPath, config, snapshot)).length }));
+}));
+
+/** Records items as seen (the Work tab was open while they were listed). */
+router.post('/seen', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const projectPath = readProjectPath(body.projectPath);
+  requireConfig(projectPath);
+  const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === 'string' && k.length < 200).slice(0, 1000) : [];
+  if (keys.length > 0) seenService.markSeen(projectPath, keys);
+  res.json(createApiSuccessResponse({ count: keys.length }));
+}));
+
 router.get('/items', asyncHandler(async (req: Request, res: Response) => {
   const projectPath = readProjectPath(req.query.projectPath);
   const config = requireConfig(projectPath);
@@ -68,6 +98,7 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
   const slack = snapshot.slack
     ? { ...snapshot.slack, items: snapshot.slack.items.filter((m) => !resolvedSlack.has(m.id)) }
     : null;
+  const currentKeys = attentionKeys(projectPath, config, snapshot);
   res.json(createApiSuccessResponse({
     todos: config.todos ? todosService.list(projectPath) : null,
     links: linksService.list(projectPath),
@@ -76,6 +107,9 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
     slackResolved: snapshot.slack ? snapshot.slack.items.filter((m) => resolvedSlack.has(m.id)) : [],
     fetchedAt,
     refreshing,
+    /** Items not seen before this load ("slack:<id>", "jira:<key>"); the panel marks them and then calls /seen. */
+    newKeys: seenService.unseen(projectPath, currentKeys),
+    currentKeys,
   }));
 }));
 

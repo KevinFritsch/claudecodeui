@@ -18,6 +18,7 @@ type WorkspaceHeaderProps = {
   shouldShowBrowserTab: boolean;
   sessionsTab: SplitPaneTab;
   shouldShowWorkTab: boolean;
+  workBadge?: number;
   isMobile: boolean;
   onMenuClick: () => void;
   /** Persists a new title for a session; resolves false when the backend refuses it. */
@@ -46,6 +47,7 @@ export default function WorkspaceHeader({
   shouldShowBrowserTab,
   sessionsTab,
   shouldShowWorkTab,
+  workBadge,
   isMobile,
   onMenuClick,
   onRenameSession,
@@ -149,6 +151,7 @@ export default function WorkspaceHeader({
                 shouldShowBrowserTab={shouldShowBrowserTab}
                 sessionsTab={sessionsTab}
                 shouldShowWorkTab={shouldShowWorkTab}
+                workBadge={workBadge}
               />
             </div>
             {canScrollRight && (

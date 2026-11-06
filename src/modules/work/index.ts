@@ -4,3 +4,4 @@ export { useWorkConfig } from '@/modules/work/useWorkConfig';
 export type { WorkConfig } from '@/modules/work/api';
 export { consumePendingWorkLink } from '@/modules/work/pendingWorkLink';
 export { workApi } from '@/modules/work/api';
+export { useWorkBadge } from '@/modules/work/useWorkBadge';

@@ -16,6 +16,8 @@ type WorkspaceTabsProps = {
   sessionsTab: SplitPaneTab;
   /** Whether the project has a Work dashboard (see ~/.config/kvn-work/projects.json). */
   shouldShowWorkTab: boolean;
+  /** New Work items since the tab was last open; shown as a red count. */
+  workBadge?: number;
 };
 
 const SESSION_VIEW_TABS = new Set<AppTab>(['chat', 'shell', 'files', 'git']);
@@ -70,6 +72,7 @@ export default function WorkspaceTabs({
   shouldShowBrowserTab,
   sessionsTab,
   shouldShowWorkTab,
+  workBadge = 0,
 }: WorkspaceTabsProps) {
   const { t } = useTranslation();
   const { plugins } = usePlugins();
@@ -151,6 +154,14 @@ export default function WorkspaceTabs({
                 <span className={`${isActive ? 'inline max-w-28' : 'hidden'} truncate sm:max-w-36 lg:inline`}>
                   {displayLabel}
                 </span>
+                {tab.id === 'work' && workBadge > 0 && !isActive && (
+                  <span
+                    aria-label={`${workBadge} new`}
+                    className="-ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
+                  >
+                    {workBadge > 99 ? '99+' : workBadge}
+                  </span>
+                )}
               </Pill>
             </Tooltip>
           </Fragment>

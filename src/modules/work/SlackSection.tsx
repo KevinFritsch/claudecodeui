@@ -64,8 +64,10 @@ function MentionRow({
   projectPath,
   sessions,
   onClosed,
+  isNew,
 }: {
   mention: SlackMention;
+  isNew: boolean;
   projectPath: string;
   sessions: SessionActions;
   onClosed: (mention: SlackMention, how: Closed['how']) => void;
@@ -146,6 +148,7 @@ function MentionRow({
       <Avatar mention={mention} />
       <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        {isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" title="New since you last looked" />}
         <span className="font-semibold text-foreground">{mention.author}</span>
         <span className="inline-flex min-w-0 items-center gap-0.5">
           <ChannelIcon kind={mention.channelKind} />
@@ -245,6 +248,7 @@ export default function SlackSection({
   projectPath,
   mentions,
   resolved,
+  newKeys,
   error,
   sessions,
   onChange,
@@ -252,6 +256,7 @@ export default function SlackSection({
   projectPath: string;
   mentions: SlackMention[];
   resolved: SlackMention[];
+  newKeys: Set<string>;
   error: string | null;
   sessions: SessionActions;
   onChange: (next: { mentions: SlackMention[]; resolved: SlackMention[] }) => void;
@@ -366,7 +371,7 @@ export default function SlackSection({
 
       <ul className="divide-y divide-border/50">
         {mentions.map((mention) => (
-          <MentionRow key={mention.id} mention={mention} projectPath={projectPath} sessions={sessions} onClosed={onClosed} />
+          <MentionRow key={mention.id} mention={mention} isNew={newKeys.has(`slack:${mention.id}`)} projectPath={projectPath} sessions={sessions} onClosed={onClosed} />
         ))}
       </ul>
       {!error && mentions.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Inbox zero: nothing on Slack is waiting on you.</p>}

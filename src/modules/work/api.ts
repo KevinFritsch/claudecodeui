@@ -90,6 +90,10 @@ export type WorkItems = {
   fetchedAt: string;
   /** True while the server is reloading them in the background. */
   refreshing: boolean;
+  /** "slack:<id>" / "jira:<key>" not seen before this load. */
+  newKeys: string[];
+  /** Every key that can be new, to mark as seen once shown. */
+  currentKeys: string[];
 };
 
 async function request<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {
@@ -127,6 +131,9 @@ export const workApi = {
     request<{ id: string; done: boolean }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done } }),
   slackReply: (projectPath: string, id: string, threadTs: string, text: string) =>
     request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text } }),
+  badge: (projectPath: string) => request<{ count: number }>(`/api/work/badge?${q(projectPath)}`),
+  markSeen: (projectPath: string, keys: string[]) =>
+    request<{ count: number }>('/api/work/seen', { method: 'POST', body: { projectPath, keys } }),
   transition: (projectPath: string, key: string, to: string) =>
     request<{ key: string; from: string; to: string }>(`/api/work/jira/${encodeURIComponent(key)}/transition`, {
       method: 'POST',
