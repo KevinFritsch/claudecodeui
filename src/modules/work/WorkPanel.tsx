@@ -702,6 +702,77 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
     return `${jiraSite}/browse/${key}`;
   }, [config.jira, jiraSite]);
 
+  const [activeColumn, setActiveColumn] = useState<'tasks' | 'slack' | 'prs'>(() => {
+    try {
+      const saved = localStorage.getItem('work:column');
+      return saved === 'slack' || saved === 'prs' ? saved : 'tasks';
+    } catch {
+      return 'tasks';
+    }
+  });
+  const chooseColumn = (id: 'tasks' | 'slack' | 'prs') => {
+    setActiveColumn(id);
+    try {
+      localStorage.setItem('work:column', id);
+    } catch {
+      /* not remembered in private mode */
+    }
+  };
+
+  const columns = !items ? [] : [
+    {
+      id: 'tasks' as const,
+      label: 'Tasks',
+      count: (items.todos?.filter((t) => t.status === 'open').length ?? 0) + tasks.length,
+      content: (
+        <>
+          {items.todos && (
+            <TodoSection
+              projectPath={projectPath}
+              todos={items.todos}
+              onChange={(todos) => setItems((cur) => (cur ? { ...cur, todos } : cur))}
+              sessions={sessions}
+            />
+          )}
+          {config.jira && items.jira && (
+            <JiraSection
+              projectPath={projectPath}
+              config={config.jira}
+              tasks={tasks}
+              error={items.jira.error}
+              prsByKey={prsByKey}
+              onTasksChange={(next) => setItems((cur) => (cur && cur.jira ? { ...cur, jira: { ...cur.jira, items: next } } : cur))}
+              sessions={sessions}
+            />
+          )}
+        </>
+      ),
+    },
+    ...(config.slack && items.slack ? [{
+      id: 'slack' as const,
+      label: 'Slack',
+      count: items.slack.items.length,
+      content: (
+        <SlackSection
+          projectPath={projectPath}
+          mentions={items.slack.items}
+          resolved={items.slackResolved ?? []}
+          error={items.slack.error}
+          sessions={sessions}
+          onChange={(next) => setItems((cur) => (cur && cur.slack
+            ? { ...cur, slack: { ...cur.slack, items: next.mentions }, slackResolved: next.resolved }
+            : cur))}
+        />
+      ),
+    }] : []),
+    ...(config.bitbucket && items.pullRequests ? [{
+      id: 'prs' as const,
+      label: 'Pull requests',
+      count: prs.filter((p) => p.isMine).length,
+      content: <PullRequestSection prs={prs} error={items.pullRequests.error} jiraUrlFor={jiraUrlFor} />,
+    }] : []),
+  ];
+
   if (!isVisible) return null;
 
   return (
@@ -721,7 +792,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {error && !items && (
           <div className="p-4"><SourceError label="Work" error={error} /></div>
         )}
@@ -731,44 +802,37 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
           </div>
         )}
         {items && (
-          <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <div className="flex min-w-0 flex-col gap-5">
-              {items.todos && (
-                <TodoSection
-                  projectPath={projectPath}
-                  todos={items.todos}
-                  onChange={(todos) => setItems((cur) => (cur ? { ...cur, todos } : cur))}
-                  sessions={sessions}
-                />
-              )}
-              {config.jira && items.jira && (
-                <JiraSection
-                  projectPath={projectPath}
-                  config={config.jira}
-                  tasks={tasks}
-                  error={items.jira.error}
-                  prsByKey={prsByKey}
-                  onTasksChange={(next) => setItems((cur) => (cur && cur.jira ? { ...cur, jira: { ...cur.jira, items: next } } : cur))}
-                  sessions={sessions}
-                />
-              )}
+          <div className="flex h-full min-h-0 flex-col">
+            {/* Below xl the three columns become tabs. */}
+            <div role="tablist" aria-label="Work sections" className="flex flex-shrink-0 gap-1 border-b border-border/60 px-3 py-1.5 xl:hidden">
+              {columns.map((column) => (
+                <button
+                  key={column.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeColumn === column.id}
+                  onClick={() => chooseColumn(column.id)}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors',
+                    activeColumn === column.id ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                  )}
+                >
+                  {column.label}
+                  <span className={cn('rounded-full px-1.5 text-[10px]', column.count > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground')}>
+                    {column.count}
+                  </span>
+                </button>
+              ))}
             </div>
-            <div className="flex min-w-0 flex-col gap-5">
-              {config.slack && items.slack && (
-                <SlackSection
-                  projectPath={projectPath}
-                  mentions={items.slack.items}
-                  resolved={items.slackResolved ?? []}
-                  error={items.slack.error}
-                  sessions={sessions}
-                  onChange={(next) => setItems((cur) => (cur && cur.slack
-                    ? { ...cur, slack: { ...cur.slack, items: next.mentions }, slackResolved: next.resolved }
-                    : cur))}
-                />
-              )}
-              {config.bitbucket && items.pullRequests && (
-                <PullRequestSection prs={prs} error={items.pullRequests.error} jiraUrlFor={jiraUrlFor} />
-              )}
+            <div className="min-h-0 flex-1 xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.85fr)] xl:divide-x xl:divide-border/50">
+              {columns.map((column) => (
+                <div
+                  key={column.id}
+                  className={cn('h-full min-h-0 overflow-y-auto px-4 pb-6 pt-3', activeColumn !== column.id && 'hidden xl:block')}
+                >
+                  <div className="flex flex-col gap-5">{column.content}</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
