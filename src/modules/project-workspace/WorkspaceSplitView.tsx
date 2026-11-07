@@ -18,6 +18,8 @@ type WorkspaceSplitViewProps = {
   onPaneTabChange: (paneId: string, tab: SplitPaneTab) => void;
   /** Renders the session title shown in a pane's bar (e.g. with in-place rename); falls back to plain text. */
   renderPaneTitle?: (pane: ResolvedSplitPane) => ReactNode;
+  /** Extra controls after the title in a pane's session bar (e.g. the Work items it is attached to). */
+  renderPaneExtras?: (pane: ResolvedSplitPane, isSplit: boolean) => ReactNode;
   /** Renders a pane's body for its current tab (chat, shell, files or source control). */
   renderPane: (pane: ResolvedSplitPane) => ReactNode;
 };
@@ -103,6 +105,7 @@ export default function WorkspaceSplitView({
   onPaneTabChange,
   renderPane,
   renderPaneTitle,
+  renderPaneExtras,
 }: WorkspaceSplitViewProps) {
   const { getProjectColor } = useProjectColors();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -249,13 +252,14 @@ export default function WorkspaceSplitView({
                     className="h-3.5 w-3.5 flex-shrink-0"
                   />
                 )}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 basis-24">
                   {hasChat && renderPaneTitle ? renderPaneTitle(pane) : (
                     <span className="block truncate font-medium" title={paneTitle(pane)}>
                       {hasChat ? paneTitle(pane) : 'Empty'}
                     </span>
                   )}
                 </div>
+                {hasChat && renderPaneExtras?.(pane, isSplit)}
                 {isSplit && pane.project?.displayName && projectColor && (
                   <span className="flex min-w-0 max-w-[30%] flex-shrink-0 items-center gap-1.5" title={pane.project.displayName}>
                     <span

@@ -3,7 +3,7 @@ import { memo, useCallback } from 'react';
 import { useProjectMainState } from '@/modules/project-workspace/context/ProjectsStateContext';
 import type { SessionEstablishedContext, SessionNavigationOptions,ProjectWorkspaceShellProps } from '@/shared/types';
 import WorkspaceMain from '@/modules/project-workspace/WorkspaceMain';
-import { consumePendingWorkLink, workApi } from '@/modules/work';
+import { consumePendingWorkLink, workApi, WORK_LINKS_CHANGED_EVENT } from '@/modules/work';
 
 /** Rendered by ProjectWorkspaceShell to bind this module's project state to WorkspaceMain. */
 function ProjectMainRegion({
@@ -50,6 +50,7 @@ function ProjectMainRegion({
     const pending = consumePendingWorkLink(projectPath, context.summary);
     if (pending) {
       void workApi.link(projectPath, pending.itemType, pending.itemKey, targetSessionId)
+        .then(() => window.dispatchEvent(new Event(WORK_LINKS_CHANGED_EVENT)))
         .catch((error: unknown) => console.warn('[work] could not link session', error));
       void renameSession(targetSessionId, pending.sessionName);
     }

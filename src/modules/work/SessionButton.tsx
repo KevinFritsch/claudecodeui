@@ -1,7 +1,7 @@
 import { MessagesSquare, Play, Plus, X } from 'lucide-react';
 
 import { cn } from '@/shared/utils';
-import type { JiraTask, Todo, WorkLink } from '@/modules/work/api';
+import type { JiraTask, PullRequest, Todo, WorkLink } from '@/modules/work/api';
 
 /** What a row needs to show and start its linked sessions. */
 export type SessionActions = {
@@ -46,6 +46,21 @@ export function jiraSeed(task: JiraTask): SessionSeed {
     sessionName: clip(`jira: ${task.key} ${task.summary}`, MAX_SESSION_NAME),
     prompt: lines.join('\n'),
     label: 'Start work',
+  };
+}
+
+export function prSeed(pr: PullRequest): SessionSeed {
+  return {
+    itemType: 'pr',
+    itemKey: `${pr.repo}#${pr.id}`,
+    sessionName: clip(`pr: ${pr.repo} #${pr.id} ${pr.title}`, MAX_SESSION_NAME),
+    prompt: [
+      `pr: ${pr.repo} #${pr.id} ${pr.title}`,
+      pr.url,
+      `${pr.sourceBranch} → ${pr.destinationBranch}${pr.issueKeys.length ? ` · ${pr.issueKeys.join(', ')}` : ''} · by ${pr.author}`,
+      '',
+      'Read its diff and comments first (golfn:bitbucket for the API), then: ',
+    ].join('\n'),
   };
 }
 

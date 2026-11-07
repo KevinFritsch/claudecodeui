@@ -6,7 +6,7 @@
 
 import { getConnection } from '@/modules/database/index.js';
 
-export type WorkItemType = 'jira' | 'todo' | 'slack';
+export type WorkItemType = 'jira' | 'todo' | 'slack' | 'pr';
 
 export type WorkLink = {
   itemType: WorkItemType;
@@ -69,6 +69,11 @@ export const linksService = {
       sessionName: row.custom_name,
       createdAt: row.created_at,
     }));
+  },
+
+  /** Links of one session (existing, not archived), newest first. */
+  listForSession(projectPath: string, sessionId: string): WorkLink[] {
+    return this.list(projectPath).filter((link) => link.sessionId === sessionId);
   },
 
   add(projectPath: string, itemType: WorkItemType, itemKey: string, sessionId: string): void {

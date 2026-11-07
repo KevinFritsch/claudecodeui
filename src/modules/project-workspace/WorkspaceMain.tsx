@@ -8,7 +8,7 @@ import { PluginTabContent } from '@/modules/plugins';
 import { BrowserUsePanel, useBrowserUseEnabled } from '@/modules/browser-use';
 import { usePaletteOpsRegister } from '@/modules/command-palette';
 import { TaskMasterPanel, useTaskMasterProjectSync, useTasksSettings } from '@/modules/task-master';
-import { WorkPanel, useWorkBadge, useWorkConfig } from '@/modules/work';
+import { SessionWorkLinks, WorkPanel, useWorkBadge, useWorkConfig } from '@/modules/work';
 import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, ResolvedSplitPane, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab, SplitPaneTab } from '@/shared/types';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useFileOpenResolver } from '@/modules/project-workspace/hooks/useFileOpenResolver';
@@ -286,6 +286,17 @@ function WorkspaceMain({
     ) : null
   ), [onRenameSession]);
 
+  // Work items (Jira, PR, to-do, Slack) attached to the pane's session; only for projects with a Work setup.
+  const renderPaneExtras = useCallback((pane: ResolvedSplitPane, isSplit: boolean) => (
+    pane.session && pane.project ? (
+      <SessionWorkLinks
+        projectPath={pane.project.fullPath || pane.project.path || ''}
+        sessionId={pane.session.id}
+        compact={isSplit || isMobile}
+      />
+    ) : null
+  ), [isMobile]);
+
   const handlePaneTabChange = useCallback((paneId: string, tab: SplitPaneTab) => {
     setPaneTab(paneId, tab);
   }, [setPaneTab]);
@@ -340,6 +351,7 @@ function WorkspaceMain({
             onPaneTabChange={handlePaneTabChange}
             renderPane={renderPane}
             renderPaneTitle={renderPaneTitle}
+            renderPaneExtras={renderPaneExtras}
           />
 
           {shouldShowTasksTab && <TaskMasterPanel isVisible={activeTab === 'tasks'} />}

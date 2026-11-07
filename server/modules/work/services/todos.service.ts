@@ -70,6 +70,11 @@ export const todosService = {
     return rows.map(toTodo);
   },
 
+  get(id: number): Todo | null {
+    const row = db().prepare('SELECT * FROM work_todos WHERE id = ?').get(id) as Row | undefined;
+    return row ? toTodo(row) : null;
+  },
+
   create(projectPath: string, text: string): Todo {
     const info = db()
       .prepare('INSERT INTO work_todos (project_path, text) VALUES (?, ?)')

@@ -22,9 +22,10 @@ import type { Project } from '@/shared/types';
 import { writeDraftText } from '@/shared/chatDrafts';
 import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, type WorkItems, type WorkLink } from '@/modules/work/api';
 import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
-import { SessionButton, jiraSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
+import { SessionButton, jiraSeed, prSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
 import SlackSection from '@/modules/work/SlackSection';
 import { WORK_SEEN_EVENT } from '@/modules/work/useWorkBadge';
+import { WORK_LINKS_CHANGED_EVENT } from '@/modules/work/SessionWorkLinks';
 
 type WorkPanelProps = {
   project: Project;
@@ -555,7 +556,7 @@ function JiraSection({
 
 /* ── Pull requests ──────────────────────────────────────────────── */
 
-function PullRequestRow({ pr, jiraUrlFor }: { pr: PullRequest; jiraUrlFor: (key: string) => string | null }) {
+function PullRequestRow({ pr, jiraUrlFor, sessions }: { pr: PullRequest; jiraUrlFor: (key: string) => string | null; sessions: SessionActions }) {
   const age = ageInDays(pr.createdOn);
   const unusualTarget = !['develop', 'dev'].includes(pr.destinationBranch);
   return (
@@ -593,11 +594,14 @@ function PullRequestRow({ pr, jiraUrlFor }: { pr: PullRequest; jiraUrlFor: (key:
         )}
         {pr.taskCount > 0 && <span>{pr.taskCount} open tasks</span>}
       </div>
+      <div className="ml-5 mt-1.5">
+        <SessionButton seed={prSeed(pr)} actions={sessions} />
+      </div>
     </li>
   );
 }
 
-function PullRequestSection({ prs, error, jiraUrlFor }: { prs: PullRequest[]; error: string | null; jiraUrlFor: (key: string) => string | null }) {
+function PullRequestSection({ prs, error, jiraUrlFor, sessions }: { prs: PullRequest[]; error: string | null; jiraUrlFor: (key: string) => string | null; sessions: SessionActions }) {
   const [showTeam, setShowTeam] = useState(false);
   const mine = prs.filter((p) => p.isMine);
   const team = prs.filter((p) => !p.isMine);
@@ -606,7 +610,7 @@ function PullRequestSection({ prs, error, jiraUrlFor }: { prs: PullRequest[]; er
       <SectionHeader title="My pull requests" count={mine.length} />
       {error && <SourceError label="Bitbucket" error={error} />}
       <ul className="divide-y divide-border/50">
-        {mine.map((pr) => <PullRequestRow key={`${pr.repo}-${pr.id}`} pr={pr} jiraUrlFor={jiraUrlFor} />)}
+        {mine.map((pr) => <PullRequestRow key={`${pr.repo}-${pr.id}`} pr={pr} jiraUrlFor={jiraUrlFor} sessions={sessions} />)}
       </ul>
       {!error && mine.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">No open pull requests.</p>}
 
@@ -615,7 +619,7 @@ function PullRequestSection({ prs, error, jiraUrlFor }: { prs: PullRequest[]; er
           <SectionHeader title="Team pull requests" count={team.length} open={showTeam} onToggle={() => setShowTeam((v) => !v)} />
           {showTeam && (
             <ul className="divide-y divide-border/50">
-              {team.map((pr) => <PullRequestRow key={`${pr.repo}-${pr.id}`} pr={pr} jiraUrlFor={jiraUrlFor} />)}
+              {team.map((pr) => <PullRequestRow key={`${pr.repo}-${pr.id}`} pr={pr} jiraUrlFor={jiraUrlFor} sessions={sessions} />)}
             </ul>
           )}
         </div>
@@ -664,6 +668,14 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
   useEffect(() => () => {
     if (pollRef.current) window.clearTimeout(pollRef.current);
   }, []);
+
+  // A session bar attached or detached something: refresh the Open session buttons.
+  useEffect(() => {
+    if (!isVisible) return undefined;
+    const onChange = () => void load();
+    window.addEventListener(WORK_LINKS_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(WORK_LINKS_CHANGED_EVENT, onChange);
+  }, [isVisible, load]);
 
   useEffect(() => {
     setItems(itemsCache.get(projectPath) ?? null);
@@ -748,7 +760,9 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
       },
       unlink: (link) => {
         setItems((cur) => (cur ? { ...cur, links: cur.links.filter((l) => l !== link) } : cur));
-        void workApi.unlink(projectPath, link.itemType, link.itemKey, link.sessionId).catch(() => void load());
+        void workApi.unlink(projectPath, link.itemType, link.itemKey, link.sessionId)
+          .then(() => window.dispatchEvent(new Event(WORK_LINKS_CHANGED_EVENT)))
+          .catch(() => void load());
       },
     };
   }, [items?.links, load, onOpenSession, onStartNewSession, project.projectId, projectPath]);
@@ -828,7 +842,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
       id: 'prs' as const,
       label: 'Pull requests',
       count: prs.filter((p) => p.isMine).length,
-      content: <PullRequestSection prs={prs} error={items.pullRequests.error} jiraUrlFor={jiraUrlFor} />,
+      content: <PullRequestSection prs={prs} error={items.pullRequests.error} jiraUrlFor={jiraUrlFor} sessions={sessions} />,
     }] : []),
   ];
 

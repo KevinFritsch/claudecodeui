@@ -12,6 +12,7 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 
 import { transitionIssue } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
+import { autoLinkPullRequests } from './services/pr-autolink.service.js';
 import { resolvedService } from './services/resolved.service.js';
 import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
@@ -100,6 +101,12 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
     ? { ...snapshot.slack, items: snapshot.slack.items.filter((m) => !resolvedSlack.has(m.id)) }
     : null;
   const currentKeys = attentionKeys(projectPath, config, snapshot);
+  // Attach PRs to the sessions that opened them (throttled, incremental).
+  try {
+    autoLinkPullRequests(projectPath, (snapshot.pullRequests?.items ?? []).filter((pr) => pr.isMine));
+  } catch (error) {
+    console.warn('[work] PR auto-link failed', (error as Error).message);
+  }
   res.json(createApiSuccessResponse({
     todos: config.todos ? todosService.list(projectPath) : null,
     links: linksService.list(projectPath),
@@ -147,8 +154,8 @@ function readLinkBody(body: Record<string, unknown>): { projectPath: string; ite
   const projectPath = readProjectPath(body.projectPath);
   requireConfig(projectPath);
   const itemType = body.itemType;
-  if (itemType !== 'jira' && itemType !== 'todo' && itemType !== 'slack') {
-    throw new AppError('itemType must be jira, todo or slack.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  if (itemType !== 'jira' && itemType !== 'todo' && itemType !== 'slack' && itemType !== 'pr') {
+    throw new AppError('itemType must be jira, todo, slack or pr.', { code: 'INVALID_REQUEST', statusCode: 400 });
   }
   const itemKey = typeof body.itemKey === 'string' || typeof body.itemKey === 'number' ? String(body.itemKey).trim() : '';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
@@ -157,6 +164,81 @@ function readLinkBody(body: Record<string, unknown>): { projectPath: string; ite
   }
   return { projectPath, itemType, itemKey, sessionId };
 }
+
+type SessionLinkView = {
+  itemType: WorkItemType;
+  itemKey: string;
+  /** Short chip text, e.g. "GOL-3581", "PR #365", "to-do". */
+  label: string;
+  title: string;
+  url: string | null;
+  status: string | null;
+  /** True when implied (a PR carrying the Jira key of a linked task) rather than stored. */
+  derived: boolean;
+};
+
+/** What a session is attached to, resolved for display in its session bar. */
+router.get('/session-links', asyncHandler(async (req: Request, res: Response) => {
+  const projectPath = readProjectPath(req.query.projectPath);
+  const config = requireConfig(projectPath);
+  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : '';
+  if (!sessionId) throw new AppError('sessionId is required.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  const { snapshot } = await getSnapshot(projectPath, config);
+  const tasks = snapshot.jira?.items ?? [];
+  const prs = snapshot.pullRequests?.items ?? [];
+  const mentions = snapshot.slack?.items ?? [];
+  const jiraSite = tasks[0]?.url.replace(/\/browse\/.*$/, '') ?? null;
+  const workspace = config.bitbucket?.workspace ?? 'thespider';
+
+  try {
+    autoLinkPullRequests(projectPath, prs.filter((pr) => pr.isMine));
+  } catch {
+    /* best effort */
+  }
+
+  const views: SessionLinkView[] = [];
+  const seen = new Set<string>();
+  for (const link of linksService.listForSession(projectPath, sessionId)) {
+    const id = `${link.itemType}:${link.itemKey}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (link.itemType === 'jira') {
+      const task = tasks.find((t) => t.key === link.itemKey);
+      views.push({
+        itemType: 'jira', itemKey: link.itemKey, label: link.itemKey, title: task?.summary ?? link.itemKey,
+        url: task?.url ?? (jiraSite ? `${jiraSite}/browse/${link.itemKey}` : null), status: task?.status ?? null, derived: false,
+      });
+    } else if (link.itemType === 'pr') {
+      const [repo, number] = link.itemKey.split('#');
+      const pr = prs.find((p) => p.repo === repo && String(p.id) === number);
+      views.push({
+        itemType: 'pr', itemKey: link.itemKey, label: `PR #${number}`, title: pr ? `${repo}: ${pr.title}` : `${repo} #${number}`,
+        url: pr?.url ?? `https://bitbucket.org/${workspace}/${repo}/pull-requests/${number}`, status: pr ? 'open' : 'closed', derived: false,
+      });
+    } else if (link.itemType === 'todo') {
+      const todo = todosService.get(Number(link.itemKey));
+      views.push({
+        itemType: 'todo', itemKey: link.itemKey, label: 'to-do', title: todo?.text ?? 'Deleted to-do', url: null,
+        status: todo?.status ?? null, derived: false,
+      });
+    } else {
+      const mention = mentions.find((m) => m.id === link.itemKey);
+      views.push({
+        itemType: 'slack', itemKey: link.itemKey, label: mention ? `@${mention.author}` : 'Slack', title: mention?.text.slice(0, 200) ?? 'Slack message',
+        url: mention?.permalink ?? null, status: null, derived: false,
+      });
+    }
+  }
+  // A PR for a linked Jira task belongs to this session too.
+  const linkedKeys = new Set(views.filter((v) => v.itemType === 'jira').map((v) => v.itemKey));
+  for (const pr of prs) {
+    const key = `${pr.repo}#${pr.id}`;
+    if (seen.has(`pr:${key}`) || !pr.issueKeys.some((k) => linkedKeys.has(k))) continue;
+    seen.add(`pr:${key}`);
+    views.push({ itemType: 'pr', itemKey: key, label: `PR #${pr.id}`, title: `${pr.repo}: ${pr.title}`, url: pr.url, status: 'open', derived: true });
+  }
+  res.json(createApiSuccessResponse({ links: views }));
+}));
 
 /** Attaches a chat session to a Jira task or to-do. */
 router.post('/links', asyncHandler(async (req: Request, res: Response) => {
