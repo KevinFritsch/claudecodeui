@@ -333,7 +333,14 @@ function JiraTaskRow({
         </div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
-        <SessionButton seed={jiraSeed(task)} actions={sessions} />
+        <SessionButton
+          seed={{
+            ...jiraSeed(task),
+            // Starting work on a To Do task moves it to In Progress (with the usual Undo).
+            onStart: task.status.toLowerCase() === 'to do' ? () => onMove(task, 'In Progress') : undefined,
+          }}
+          actions={sessions}
+        />
         <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
         {available.map((action) => {
           const isSuggested = suggestPr && action.toLowerCase() === 'pull request';

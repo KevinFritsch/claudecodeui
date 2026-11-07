@@ -18,6 +18,10 @@ export type SlackProjectConfig = {
   lookbackDays?: number;
   /** Channel names (without #) to ignore. */
   excludeChannels?: string[];
+  /** Voice guide used when drafting replies (default: the golfn slack-voice skill). */
+  voiceGuideFile?: string;
+  /** Model for drafted replies. Default "sonnet". */
+  replyModel?: string;
 };
 
 export type SlackMention = {
@@ -45,6 +49,8 @@ type MentionState = { state: 'open' | 'answered'; checkedAt: number; myReactions
 
 const DONE_REACTIONS = new Set(['white_check_mark', 'heavy_check_mark', 'ballot_box_with_check', 'done']);
 const OPEN_RECHECK_MS = 90_000;
+/** In a busy channel, only a message from the user within this window counts as their answer. */
+const CHANNEL_ANSWER_WINDOW_S = 3 * 3600;
 
 const stateCache = new Map<string, MentionState>();
 const userCache = new Map<string, { name: string; avatar: string | null }>();
@@ -156,7 +162,23 @@ async function checkState(slack: SlackClient, me: string, match: SearchMatch, th
   const own = data.messages.find((m) => m.ts === match.ts);
   const mine = (own?.reactions ?? []).filter((r) => r.users?.includes(me)).map((r) => r.name);
   const checked = mine.some((name) => DONE_REACTIONS.has(name));
-  const replied = data.messages.some((m) => m.user === me && Number(m.ts) > Number(match.ts));
+  let replied = data.messages.some((m) => m.user === me && Number(m.ts) > Number(match.ts));
+
+  // A top-level message is often answered in the conversation itself rather
+  // than in a thread: any later message from the user counts in a DM or group
+  // DM, and one within a few hours counts in a channel.
+  if (!checked && !replied && threadTs === match.ts) {
+    const isDirect = Boolean(match.channel.is_im || match.channel.is_mpim);
+    const latest = isDirect ? undefined : String(Number(match.ts) + CHANNEL_ANSWER_WINDOW_S);
+    const history = await slack.call<{ messages: ThreadMessage[] }>('conversations.history', {
+      channel: match.channel.id,
+      oldest: match.ts,
+      ...(latest ? { latest } : {}),
+      limit: 50,
+    });
+    replied = history.messages.some((m) => m.user === me && Number(m.ts) > Number(match.ts));
+  }
+
   return {
     state: checked || replied ? 'answered' : 'open',
     checkedAt: Date.now(),
@@ -283,4 +305,20 @@ export async function postReply(secrets: WorkSecrets, id: string, threadTs: stri
   const cached = stateCache.get(id);
   stateCache.set(id, { myReactions: [], replyCount: 0, ...cached, state: 'answered', checkedAt: Date.now() });
   return { ts: data.ts };
+}
+
+/** The message's thread (or the message alone), as readable "Name: text" lines, oldest first. */
+export async function readThread(secrets: WorkSecrets, id: string, threadTs: string): Promise<string[]> {
+  const { channel } = parseId(id);
+  if (!/^\d+\.\d+$/.test(threadTs)) throw new Error('Invalid thread.');
+  const slack = client(secrets);
+  const data = await slack.call<{ messages: Array<{ ts: string; user?: string; username?: string; text?: string }> }>(
+    'conversations.replies',
+    { channel, ts: threadTs, limit: 60 },
+  );
+  return Promise.all(data.messages.map(async (m) => {
+    const who = m.user ? await userName(slack, m.user) : (m.username ?? 'bot');
+    const text = await renderText(slack, m.text ?? '');
+    return `${who}${m.ts === parseId(id).ts ? ' (the message to answer)' : ''}: ${text}`;
+  }));
 }

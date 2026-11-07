@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, Undo2, Users, X } from 'lucide-react';
+import { AlertTriangle, Sparkles, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, Undo2, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import { cn } from '@/shared/utils';
@@ -75,6 +75,9 @@ function MentionRow({
   const [resolving, setResolving] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [replying, setReplying] = useState(false);
+  // In AI mode the box takes an instruction ("explain why we did that") and Claude drafts the reply into it.
+  const [aiMode, setAiMode] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [draft, setDraft] = useState('');
   const [sendAt, setSendAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<'done' | 'send' | null>(null);
@@ -131,9 +134,34 @@ function MentionRow({
     }
   };
 
+  const draftWithAi = async () => {
+    setDrafting(true);
+    setError(null);
+    try {
+      const { text } = await workApi.slackAiReply(projectPath, mention.id, mention.threadTs, mention.author, draft);
+      setDraft(text);
+      setAiMode(false);
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  const openAi = () => {
+    setReplying(true);
+    setAiMode(true);
+    setDraft('');
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
+      if (aiMode) {
+        if (!drafting) void draftWithAi();
+        return;
+      }
       if (draft.trim()) setSendAt(Date.now() + SEND_DELAY_MS);
     } else if (event.key === 'Escape') {
       setReplying(false);
@@ -181,9 +209,11 @@ function MentionRow({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
-            disabled={sendAt !== null || busy === 'send'}
-            rows={Math.min(6, Math.max(2, draft.split('\n').length))}
-            placeholder={`Reply in thread as you… (Enter to send, Shift+Enter for a new line)`}
+            disabled={sendAt !== null || busy === 'send' || drafting}
+            rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+            placeholder={aiMode
+              ? 'What should the reply say? e.g. "explain why we kept it cash-only" (Enter to draft; empty lets Claude decide)'
+              : 'Reply in thread as you… (Enter to send, Shift+Enter for a new line)'}
             className="block w-full resize-none bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/70 disabled:opacity-60"
           />
           <div className="flex items-center gap-2 border-t border-border/50 px-2 py-1 text-[11px] text-muted-foreground">
@@ -197,10 +227,32 @@ function MentionRow({
               </>
             ) : busy === 'send' ? (
               <><Loader2 className="h-3 w-3 animate-spin" /> Sending…</>
+            ) : drafting ? (
+              <><Loader2 className="h-3 w-3 animate-spin" /> Claude is drafting your reply…</>
+            ) : aiMode ? (
+              <>
+                <Sparkles className="h-3 w-3" /> Claude drafts it in your voice; you edit before sending
+                <button type="button" onClick={() => { setAiMode(false); }} className="ml-auto rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">Write it myself</button>
+                <button
+                  type="button"
+                  onClick={() => void draftWithAi()}
+                  className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-0.5 font-medium text-white hover:bg-violet-600/90"
+                >
+                  <Sparkles className="h-3 w-3" /> Draft
+                </button>
+              </>
             ) : (
               <>
                 <CornerDownLeft className="h-3 w-3" /> posts in the thread as you
                 <button type="button" onClick={() => setReplying(false)} className="ml-auto rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">Close</button>
+                <button
+                  type="button"
+                  onClick={() => void draftWithAi()}
+                  title="Rewrite what you typed in your voice (or draft one if empty)"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-violet-600 hover:bg-violet-500/10 dark:text-violet-400"
+                >
+                  <Sparkles className="h-3 w-3" /> Polish
+                </button>
                 <button
                   type="button"
                   disabled={!draft.trim()}
@@ -224,9 +276,19 @@ function MentionRow({
           {busy === 'done' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Done
         </button>
         {!replying && (
-          <button type="button" onClick={() => setReplying(true)} className={button} title="Reply in the thread">
-            <Reply className="h-3 w-3" /> Reply
-          </button>
+          <>
+            <button type="button" onClick={() => setReplying(true)} className={button} title="Reply in the thread">
+              <Reply className="h-3 w-3" /> Reply
+            </button>
+            <button
+              type="button"
+              onClick={openAi}
+              className={cn(button, 'hover:border-violet-500/50 hover:text-violet-600 dark:hover:text-violet-400')}
+              title="Tell Claude what to say; it drafts the reply in your voice for you to edit"
+            >
+              <Sparkles className="h-3 w-3" /> AI reply
+            </button>
+          </>
         )}
         <button
           type="button"

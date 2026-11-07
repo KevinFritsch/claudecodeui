@@ -15,7 +15,8 @@ import { linksService, type WorkItemType } from './services/links.service.js';
 import { resolvedService } from './services/resolved.service.js';
 import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
-import { markDone, postReply, unmarkDone } from './services/slack.service.js';
+import { draftSlackReply } from './services/ai-reply.service.js';
+import { markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
@@ -216,6 +217,24 @@ router.post('/slack/done', asyncHandler(async (req: Request, res: Response) => {
     });
   }
   res.json(createApiSuccessResponse({ id, done: body.done !== false }));
+}));
+
+/** Drafts a reply in the user's voice for them to edit; nothing is sent. */
+router.post('/slack/ai-reply', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const { projectPath, id } = readSlackId(body);
+  const config = requireConfig(projectPath);
+  const threadTs = typeof body.threadTs === 'string' ? body.threadTs : '';
+  const instruction = typeof body.instruction === 'string' ? body.instruction.slice(0, 2000) : '';
+  const author = typeof body.author === 'string' ? body.author.slice(0, 100) : 'them';
+  const text = await slackAction(async () => draftSlackReply({
+    thread: await readThread(readSecrets(), id, threadTs),
+    instruction,
+    author,
+    voiceGuideFile: config.slack?.voiceGuideFile,
+    model: config.slack?.replyModel,
+  }));
+  res.json(createApiSuccessResponse({ text }));
 }));
 
 /** Replies in the message's thread, as the user. */

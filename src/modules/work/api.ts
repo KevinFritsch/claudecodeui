@@ -129,6 +129,8 @@ export const workApi = {
     request<{ count: number; resolved: boolean }>('/api/work/resolve', { method: 'POST', body: { projectPath, itemType, itemKeys, resolved } }),
   slackDone: (projectPath: string, id: string, done: boolean) =>
     request<{ id: string; done: boolean }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done } }),
+  slackAiReply: (projectPath: string, id: string, threadTs: string, author: string, instruction: string) =>
+    request<{ text: string }>('/api/work/slack/ai-reply', { method: 'POST', body: { projectPath, id, threadTs, author, instruction } }),
   slackReply: (projectPath: string, id: string, threadTs: string, text: string) =>
     request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text } }),
   badge: (projectPath: string) => request<{ count: number }>(`/api/work/badge?${q(projectPath)}`),

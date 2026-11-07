@@ -18,6 +18,10 @@ export type SessionSeed = {
   sessionName: string;
   /** Text prefilled in the new chat's composer. */
   prompt: string;
+  /** Button label when no session is linked yet. Default "Start session". */
+  label?: string;
+  /** Runs when a new session is started from this item (e.g. move the Jira task to In Progress). */
+  onStart?: () => void;
 };
 
 const MAX_SESSION_NAME = 80;
@@ -33,6 +37,7 @@ export function jiraSeed(task: JiraTask): SessionSeed {
     task.url,
     `Status: ${task.status}${task.sprint ? ` · ${task.sprint.name}` : ' · Backlog'}`,
     '',
+    `Read ${task.key} and its comments first (Atlassian connector). If it needs code changes, create a worktree for it with golfn:worktree (branch named after ${task.key}), then give me a short plan before changing anything. If it is a data or config request, just tell me what you would run.`,
     '',
   ];
   return {
@@ -40,6 +45,7 @@ export function jiraSeed(task: JiraTask): SessionSeed {
     itemKey: task.key,
     sessionName: clip(`jira: ${task.key} ${task.summary}`, MAX_SESSION_NAME),
     prompt: lines.join('\n'),
+    label: 'Start work',
   };
 }
 
@@ -61,11 +67,14 @@ export function SessionButton({ seed, actions }: { seed: SessionSeed; actions: S
     return (
       <button
         type="button"
-        onClick={() => actions.start(seed)}
+        onClick={() => {
+          seed.onStart?.();
+          actions.start(seed);
+        }}
         title="Start a new session with this item's details"
         className={cn(buttonClass, 'border-border/70 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary')}
       >
-        <Play className="h-3 w-3" /> Start session
+        <Play className="h-3 w-3" /> {seed.label ?? 'Start session'}
       </button>
     );
   }
