@@ -353,6 +353,25 @@ function SidebarProjectItem({
                   <span className="flex-shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums leading-4 text-muted-foreground">
                     {sessionCountDisplay}
                   </span>
+                  {/* Kvn: the star sits with the name (it floated mid-row beside the hidden hover actions). */}
+                  <div
+                    className={cn(
+                      '-ml-1 flex h-5 w-5 flex-shrink-0 cursor-pointer items-center justify-center rounded transition-all duration-200 hover:bg-accent',
+                      isStarred ? 'opacity-100' : 'touch:opacity-100 opacity-0 group-hover:opacity-100',
+                    )}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleStarProject();
+                    }}
+                    title={isStarred ? t('tooltips.removeFromFavorites') : t('tooltips.addToFavorites')}
+                  >
+                    <Star
+                      className={cn(
+                        'h-3 w-3 transition-colors',
+                        isStarred ? 'fill-current text-amber-600/60 dark:text-amber-100/75' : 'text-muted-foreground',
+                      )}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -382,25 +401,6 @@ function SidebarProjectItem({
               </>
             ) : (
               <>
-                {/* Starred projects keep the star visible; others show it on hover. */}
-                <div
-                  className={cn(
-                    'flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-all duration-200 hover:bg-accent',
-                    isStarred ? 'opacity-100' : 'touch:opacity-100 opacity-0 group-hover:opacity-100',
-                  )}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    toggleStarProject();
-                  }}
-                  title={isStarred ? t('tooltips.removeFromFavorites') : t('tooltips.addToFavorites')}
-                >
-                  <Star
-                    className={cn(
-                      'h-3 w-3 transition-colors',
-                      isStarred ? 'fill-current text-amber-600/60 dark:text-amber-100/75' : 'text-muted-foreground',
-                    )}
-                  />
-                </div>
                 <div
                   className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-accent group-hover:opacity-100"
                   onClick={(event) => {
