@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { LLMProviderLogo } from '@/shared/ui';
 import type { AppTab, Project, ProjectSession } from '@/shared/types';
 import { usePlugins } from '@/modules/plugins';
-import { getSessionTitle } from '@/shared/utils';
+import { cn, getSessionTitle } from '@/shared/utils';
 import { useSessionTitleRename } from '@/modules/project-workspace/hooks/useSessionTitleRename';
 
 type WorkspaceTitleProps = {
@@ -13,6 +13,8 @@ type WorkspaceTitleProps = {
   shouldShowTasksTab: boolean;
   /** Persists a new title for a session; resolves false when the backend refuses it. */
   onRenameSession: (sessionId: string, summary: string) => Promise<boolean>;
+  /** One line, no provider logo or project name: for a pane's session bar. */
+  compact?: boolean;
 };
 
 function getTabTitle(activeTab: AppTab, shouldShowTasksTab: boolean, t: (key: string) => string, pluginDisplayName?: string) {
@@ -54,6 +56,7 @@ export default function WorkspaceTitle({
   selectedSession,
   shouldShowTasksTab,
   onRenameSession,
+  compact = false,
 }: WorkspaceTitleProps) {
   const { t } = useTranslation();
   const { plugins } = usePlugins();
@@ -62,7 +65,7 @@ export default function WorkspaceTitle({
     ? plugins.find((p) => p.name === activeTab.replace('plugin:', ''))?.displayName
     : undefined;
 
-  const showSessionIcon = activeTab === 'chat' && Boolean(selectedSession);
+  const showSessionIcon = !compact && activeTab === 'chat' && Boolean(selectedSession);
   const showChatNewSession = activeTab === 'chat' && !selectedSession;
   const sessionTitle = selectedSession ? getSessionTitle(selectedSession) : '';
 
@@ -112,24 +115,24 @@ export default function WorkspaceTitle({
               <h2
                 title={t('mainContent.renameSessionHint', { title: sessionTitle })}
                 onDoubleClick={startRenaming}
-                className="cursor-text truncate text-sm font-semibold leading-tight text-foreground"
+                className={cn('cursor-text truncate font-semibold leading-tight text-foreground', compact ? 'text-xs' : 'text-sm')}
               >
                 {sessionTitle}
               </h2>
             )}
-            <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+            {!compact && <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>}
           </div>
         ) : showChatNewSession ? (
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold leading-tight text-foreground">{t('mainContent.newSession')}</h2>
-            <div className="truncate text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+            <h2 className={cn('truncate font-semibold leading-tight text-foreground', compact ? 'text-xs' : 'text-base')}>{t('mainContent.newSession')}</h2>
+            {!compact && <div className="truncate text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>}
           </div>
         ) : (
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold leading-tight text-foreground">
               {getTabTitle(activeTab, shouldShowTasksTab, t, pluginDisplayName)}
             </h2>
-            <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+            {!compact && <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>}
           </div>
         )}
       </div>

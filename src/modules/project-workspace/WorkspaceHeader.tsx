@@ -7,7 +7,6 @@ import { cn } from '@/shared/utils';
 import MobileMenuButton from '@/modules/project-workspace/MobileMenuButton';
 import WorkspaceConnectionStatus from '@/modules/project-workspace/WorkspaceConnectionStatus';
 import WorkspaceTabs from '@/modules/project-workspace/WorkspaceTabs';
-import WorkspaceTitle from '@/modules/project-workspace/WorkspaceTitle';
 
 type WorkspaceHeaderProps = {
   activeTab: AppTab;
@@ -21,7 +20,7 @@ type WorkspaceHeaderProps = {
   workBadge?: number;
   isMobile: boolean;
   onMenuClick: () => void;
-  /** Persists a new title for a session; resolves false when the backend refuses it. */
+  /** Unused since the session title moved to the session bar; kept so callers need not change. */
   onRenameSession: (sessionId: string, summary: string) => Promise<boolean>;
   /** Current chat split arrangement, shown as the active layout button; null for a mixed layout. */
   splitLayout: SplitLayoutMode | null;
@@ -41,8 +40,6 @@ const SPLIT_LAYOUT_OPTIONS: Array<{ layout: SplitLayoutMode; label: string; Icon
 export default function WorkspaceHeader({
   activeTab,
   setActiveTab,
-  selectedProject,
-  selectedSession,
   shouldShowTasksTab,
   shouldShowBrowserTab,
   sessionsTab,
@@ -50,7 +47,6 @@ export default function WorkspaceHeader({
   workBadge,
   isMobile,
   onMenuClick,
-  onRenameSession,
   splitLayout,
   onSplitLayoutChange,
   showSplitLayoutControls,
@@ -118,21 +114,13 @@ export default function WorkspaceHeader({
 
   return (
     <header className="pwa-header-safe flex-shrink-0 border-b border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-sm sm:px-4 sm:py-2">
-      <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-        <div className="flex min-w-0 items-center gap-2 sm:max-w-[min(34%,24rem)] sm:flex-[1_1_18rem]">
-          {isMobile && <MobileMenuButton onMenuClick={onMenuClick} />}
-          <WorkspaceTitle
-            activeTab={activeTab}
-            selectedProject={selectedProject}
-            selectedSession={selectedSession}
-            shouldShowTasksTab={shouldShowTasksTab}
-            onRenameSession={onRenameSession}
-          />
-          <WorkspaceConnectionStatus />
-        </div>
+      {/* Kvn: the project bar. Project tabs sit above it, and each session's title
+          and Chat/Shell/Files/Source Control live in the session bar below it. */}
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        {isMobile && <MobileMenuButton onMenuClick={onMenuClick} />}
 
-        <div className="-mx-3 min-w-0 sm:mx-0 sm:flex-1">
-          <div className="relative ml-auto w-fit max-w-full">
+        <div className="min-w-0 flex-1">
+          <div className="relative w-fit max-w-full">
             {canScrollLeft && (
               <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background via-background/90 to-transparent" />
             )}
@@ -140,8 +128,8 @@ export default function WorkspaceHeader({
               ref={scrollRef}
               onScroll={updateScrollState}
               className={cn(
-                'scrollbar-hide max-w-full scroll-smooth overflow-x-auto overscroll-x-contain px-3 [-webkit-overflow-scrolling:touch]',
-                hasOverflow ? 'sm:px-9' : 'sm:pl-3 sm:pr-0',
+                'scrollbar-hide max-w-full scroll-smooth overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]',
+                hasOverflow ? 'sm:px-9' : 'sm:px-0',
               )}
             >
               <WorkspaceTabs
@@ -180,6 +168,8 @@ export default function WorkspaceHeader({
             )}
           </div>
         </div>
+
+        <WorkspaceConnectionStatus />
 
         {!isMobile && showSplitLayoutControls && (
           <div

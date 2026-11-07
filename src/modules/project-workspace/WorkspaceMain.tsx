@@ -14,6 +14,7 @@ import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
 import { useFileOpenResolver } from '@/modules/project-workspace/hooks/useFileOpenResolver';
 import { EditorSidebar, useEditorSidebar } from '@/modules/code-editor';
 import WorkspaceHeader from '@/modules/project-workspace/WorkspaceHeader';
+import WorkspaceTitle from '@/modules/project-workspace/WorkspaceTitle';
 import WorkspaceStateView from '@/modules/project-workspace/WorkspaceStateView';
 import WorkspaceErrorBoundary from '@/modules/project-workspace/WorkspaceErrorBoundary';
 import WorkspaceSplitView from '@/modules/project-workspace/WorkspaceSplitView';
@@ -271,6 +272,20 @@ function WorkspaceMain({
     ws,
   ]);
 
+  // The session bar's title, renamable in place by double-click like the old header title.
+  const renderPaneTitle = useCallback((pane: ResolvedSplitPane) => (
+    pane.project ? (
+      <WorkspaceTitle
+        compact
+        activeTab="chat"
+        selectedProject={pane.project}
+        selectedSession={pane.session}
+        shouldShowTasksTab={false}
+        onRenameSession={onRenameSession}
+      />
+    ) : null
+  ), [onRenameSession]);
+
   const handlePaneTabChange = useCallback((paneId: string, tab: SplitPaneTab) => {
     setPaneTab(paneId, tab);
   }, [setPaneTab]);
@@ -289,6 +304,13 @@ function WorkspaceMain({
 
   return (
     <div className="flex h-full flex-col">
+      {/* Kvn: top-down hierarchy: project tabs, then the project bar (Sessions/Work),
+          then each session's own bar inside the split view. */}
+      <WorkspaceProjectTabs
+        tabs={splitLayout.tabs}
+        onSelect={splitLayout.selectTab}
+        onClose={splitLayout.closeTab}
+      />
       <WorkspaceHeader
         activeTab={isPaneTabActive ? focusedPaneTab : activeTab}
         setActiveTab={setActiveTab}
@@ -309,13 +331,6 @@ function WorkspaceMain({
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className={`flex min-h-0 min-w-[200px] flex-col overflow-hidden ${editorExpanded ? 'hidden' : ''} flex-1`}>
-          {isPaneTabActive && (
-            <WorkspaceProjectTabs
-              tabs={splitLayout.tabs}
-              onSelect={splitLayout.selectTab}
-              onClose={splitLayout.closeTab}
-            />
-          )}
           <WorkspaceSplitView
             panes={splitLayout.panes}
             isVisible={isPaneTabActive}
@@ -324,6 +339,7 @@ function WorkspaceMain({
             onDropSession={splitLayout.dropSession}
             onPaneTabChange={handlePaneTabChange}
             renderPane={renderPane}
+            renderPaneTitle={renderPaneTitle}
           />
 
           {shouldShowTasksTab && <TaskMasterPanel isVisible={activeTab === 'tasks'} />}

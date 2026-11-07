@@ -16,6 +16,8 @@ type WorkspaceSplitViewProps = {
   onClosePane: (paneId: string) => void;
   onDropSession: (payload: SessionDragPayload, target: SplitDropTarget) => void;
   onPaneTabChange: (paneId: string, tab: SplitPaneTab) => void;
+  /** Renders the session title shown in a pane's bar (e.g. with in-place rename); falls back to plain text. */
+  renderPaneTitle?: (pane: ResolvedSplitPane) => ReactNode;
   /** Renders a pane's body for its current tab (chat, shell, files or source control). */
   renderPane: (pane: ResolvedSplitPane) => ReactNode;
 };
@@ -100,6 +102,7 @@ export default function WorkspaceSplitView({
   onDropSession,
   onPaneTabChange,
   renderPane,
+  renderPaneTitle,
 }: WorkspaceSplitViewProps) {
   const { getProjectColor } = useProjectColors();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -227,60 +230,68 @@ export default function WorkspaceSplitView({
                 if (!pane.isFocused) onFocusPane(pane.paneId);
               }}
             >
-              {isSplit && (
-                <div
-                  className={cn(
-                    'flex h-8 flex-shrink-0 items-center gap-2 border-b border-border/60 px-2.5 text-xs',
-                    pane.isFocused ? 'text-foreground' : 'bg-muted/30 text-muted-foreground',
-                    pane.isFocused && !projectColor && 'bg-primary/5',
-                  )}
-                  style={isHighlighted ? {
-                    backgroundColor: withAlpha(projectColor, 0.1),
-                    boxShadow: `inset 0 2px 0 ${projectColor}`,
-                  } : undefined}
-                >
-                  {pane.session && (
-                    <LLMProviderLogo
-                      provider={pane.session.__provider ?? 'claude'}
-                      className="h-3 w-3 flex-shrink-0"
-                    />
-                  )}
-                  <span className="min-w-0 flex-1 truncate font-medium" title={paneTitle(pane)}>
-                    {hasChat ? paneTitle(pane) : 'Empty'}
-                  </span>
-                  {pane.project?.displayName && projectColor && (
-                    <span className="flex min-w-0 max-w-[30%] flex-shrink-0 items-center gap-1.5" title={pane.project.displayName}>
-                      <span
-                        className="h-2 w-2 flex-shrink-0 rounded-full"
-                        style={{ backgroundColor: projectColor, boxShadow: `0 0 0 2px ${withAlpha(projectColor, 0.2)}` }}
-                        aria-hidden
-                      />
-                      <span className="hidden truncate text-muted-foreground/80 xl:inline">{pane.project.displayName}</span>
+              {/* Kvn: every pane gets a session bar (title + its own Chat/Shell/Files/Source
+                  Control), single pane included, so session controls always live with the session. */}
+              <div
+                className={cn(
+                  'flex h-9 flex-shrink-0 items-center gap-2 border-b border-border/60 px-2.5 text-xs',
+                  !isSplit || pane.isFocused ? 'text-foreground' : 'bg-muted/30 text-muted-foreground',
+                  isSplit && pane.isFocused && !projectColor && 'bg-primary/5',
+                )}
+                style={isHighlighted ? {
+                  backgroundColor: withAlpha(projectColor, 0.1),
+                  boxShadow: `inset 0 2px 0 ${projectColor}`,
+                } : undefined}
+              >
+                {pane.session && (
+                  <LLMProviderLogo
+                    provider={pane.session.__provider ?? 'claude'}
+                    className="h-3.5 w-3.5 flex-shrink-0"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  {hasChat && renderPaneTitle ? renderPaneTitle(pane) : (
+                    <span className="block truncate font-medium" title={paneTitle(pane)}>
+                      {hasChat ? paneTitle(pane) : 'Empty'}
                     </span>
                   )}
-                  {hasChat && pane.project && (
-                    <div role="tablist" aria-label="Pane view" className="flex flex-shrink-0 items-center gap-0.5">
-                      {PANE_TABS.map(({ tab, label, Icon }) => (
-                        <button
-                          key={tab}
-                          type="button"
-                          role="tab"
-                          aria-selected={pane.tab === tab}
-                          aria-label={label}
-                          title={label}
-                          onClick={() => onPaneTabChange(pane.paneId, tab)}
-                          className={cn(
-                            'flex h-5 w-5 items-center justify-center rounded transition-colors',
-                            pane.tab === tab
-                              ? 'bg-accent text-foreground'
-                              : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-                          )}
-                        >
-                          <Icon className="h-3 w-3" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                </div>
+                {isSplit && pane.project?.displayName && projectColor && (
+                  <span className="flex min-w-0 max-w-[30%] flex-shrink-0 items-center gap-1.5" title={pane.project.displayName}>
+                    <span
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{ backgroundColor: projectColor, boxShadow: `0 0 0 2px ${withAlpha(projectColor, 0.2)}` }}
+                      aria-hidden
+                    />
+                    <span className="hidden truncate text-muted-foreground/80 xl:inline">{pane.project.displayName}</span>
+                  </span>
+                )}
+                {hasChat && pane.project && (
+                  <div role="tablist" aria-label="Session view" className="flex flex-shrink-0 items-center gap-0.5">
+                    {PANE_TABS.map(({ tab, label, Icon }) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={pane.tab === tab}
+                        aria-label={label}
+                        title={label}
+                        onClick={() => onPaneTabChange(pane.paneId, tab)}
+                        className={cn(
+                          'flex h-6 items-center gap-1.5 rounded transition-colors',
+                          isSplit ? 'w-6 justify-center' : 'px-2',
+                          pane.tab === tab
+                            ? 'bg-accent font-medium text-foreground'
+                            : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                        )}
+                      >
+                        <Icon className={isSplit ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+                        {!isSplit && <span className="hidden sm:inline">{label}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {isSplit && (
                   <button
                     type="button"
                     aria-label="Close pane"
@@ -291,33 +302,8 @@ export default function WorkspaceSplitView({
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
-                </div>
-              )}
-
-              {/* Kvn: a lone pane has no header, so its view switcher sits in a slim strip
-                  (the workspace header now only holds project-level tabs). */}
-              {!isSplit && hasChat && pane.project && (
-                <div role="tablist" aria-label="Session view" className="flex h-8 flex-shrink-0 items-center gap-0.5 border-b border-border/60 px-2">
-                  {PANE_TABS.map(({ tab, label, Icon }) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      role="tab"
-                      aria-selected={pane.tab === tab}
-                      onClick={() => onPaneTabChange(pane.paneId, tab)}
-                      className={cn(
-                        'flex h-6 items-center gap-1.5 rounded px-2 text-xs transition-colors',
-                        pane.tab === tab
-                          ? 'bg-accent font-medium text-foreground'
-                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
+                )}
+              </div>
 
               <div className="min-h-0 flex-1">
                 {hasChat ? (
