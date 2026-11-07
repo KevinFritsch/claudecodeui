@@ -4,7 +4,7 @@
   "description": "Kvn AI workspace",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0d14",
+  "background_color": "#8f8af5",
   "theme_color": "#5b54e0",
   "orientation": "portrait-primary",
   "scope": "/",
