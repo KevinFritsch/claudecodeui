@@ -229,14 +229,6 @@ router.get('/session-links', asyncHandler(async (req: Request, res: Response) =>
       });
     }
   }
-  // A PR for a linked Jira task belongs to this session too.
-  const linkedKeys = new Set(views.filter((v) => v.itemType === 'jira').map((v) => v.itemKey));
-  for (const pr of prs) {
-    const key = `${pr.repo}#${pr.id}`;
-    if (seen.has(`pr:${key}`) || !pr.issueKeys.some((k) => linkedKeys.has(k))) continue;
-    seen.add(`pr:${key}`);
-    views.push({ itemType: 'pr', itemKey: key, label: `PR #${pr.id}`, title: `${pr.repo}: ${pr.title}`, url: pr.url, status: 'open', derived: true });
-  }
   res.json(createApiSuccessResponse({ links: views }));
 }));
 

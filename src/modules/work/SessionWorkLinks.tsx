@@ -21,7 +21,6 @@ function candidatesFrom(items: WorkItems, listedStatuses: string[]): Candidate[]
   return [
     ...(items.jira?.items ?? []).filter((t) => listed.has(t.status.toLowerCase()))
       .map((t) => ({ itemType: 'jira' as const, itemKey: t.key, label: t.key, title: t.summary })),
-    ...(items.pullRequests?.items ?? []).map((p) => ({ itemType: 'pr' as const, itemKey: `${p.repo}#${p.id}`, label: `PR #${p.id}`, title: `${p.repo}: ${p.title}` })),
     ...(items.todos ?? []).filter((t) => t.status === 'open')
       .map((t) => ({ itemType: 'todo' as const, itemKey: String(t.id), label: 'to-do', title: t.text })),
     ...(items.slack?.items ?? []).map((m) => ({ itemType: 'slack' as const, itemKey: m.id, label: `@${m.author}`, title: m.text })),
@@ -155,7 +154,7 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
         type="button"
         onClick={() => setPickerOpen((v) => !v)}
         aria-label="Attach a Work item to this session"
-        title="Attach a Jira task, PR, to-do or Slack message"
+        title="Attach a Jira task, to-do or Slack message (PRs attach when the session creates them)"
         className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <Plus className="h-3 w-3" />
@@ -196,7 +195,7 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
                 if (e.key === 'Escape') setPickerOpen(false);
                 if (e.key === 'Enter' && shown[0]) void attach(shown[0]);
               }}
-              placeholder="Attach a Jira task, PR, to-do, Slack…"
+              placeholder="Attach a Jira task, to-do, Slack message…"
               className="h-7 min-w-0 flex-1 bg-transparent text-xs outline-none"
             />
           </div>
