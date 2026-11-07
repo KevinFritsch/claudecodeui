@@ -87,7 +87,8 @@
     },
     "tabs": {
       "settings": "הגדרות",
-      "commands": "פקודות"
+      "commands": "פקודות",
+      "recent": "Recent"
     },
     "pin": "הצמדת הלוח כפתוח",
     "unpin": "ביטול הצמדת הלוח",

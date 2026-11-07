@@ -70,7 +70,8 @@
     },
     "tabs": {
       "settings": "Ayarlar",
-      "commands": "Komutlar"
+      "commands": "Komutlar",
+      "recent": "Recent"
     },
     "pin": "Paneli sabitle",
     "unpin": "Panel sabitlemesini kaldır",

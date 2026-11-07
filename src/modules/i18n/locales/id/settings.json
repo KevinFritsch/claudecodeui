@@ -87,7 +87,8 @@
     },
     "tabs": {
       "settings": "Pengaturan",
-      "commands": "Perintah"
+      "commands": "Perintah",
+      "recent": "Recent"
     },
     "pin": "Sematkan panel",
     "unpin": "Lepas sematan panel",

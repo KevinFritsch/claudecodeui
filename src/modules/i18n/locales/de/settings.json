@@ -70,7 +70,8 @@
     },
     "tabs": {
       "settings": "Einstellungen",
-      "commands": "Befehle"
+      "commands": "Befehle",
+      "recent": "Recent"
     },
     "pin": "Panel anheften",
     "unpin": "Panel lösen",

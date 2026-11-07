@@ -87,7 +87,8 @@
     },
     "tabs": {
       "settings": "Settings",
-      "commands": "Commands"
+      "commands": "Commands",
+      "recent": "Recent"
     },
     "pin": "Pin panel open",
     "unpin": "Unpin panel",
@@ -105,7 +106,8 @@
         "skills": "Skills"
       },
       "insertTitle": "Insert {{command}} into the chat"
-    }
+    },
+    "accessTitle": "Quick access"
   },
   "terminalShortcuts": {
     "title": "Terminal Shortcuts",

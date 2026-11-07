@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from 'react';
-import { Settings2, Terminal, type LucideIcon } from 'lucide-react';
+import { History, Terminal, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { QuickSettingsTab } from '@/shared/types';
@@ -12,7 +12,7 @@ type TabDefinition = {
 };
 
 const TABS: TabDefinition[] = [
-  { id: 'settings', labelKey: 'quickSettings.tabs.settings', icon: Settings2 },
+  { id: 'recent', labelKey: 'quickSettings.tabs.recent', icon: History },
   { id: 'commands', labelKey: 'quickSettings.tabs.commands', icon: Terminal },
 ];
 

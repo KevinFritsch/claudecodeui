@@ -87,7 +87,8 @@
     },
     "tabs": {
       "settings": "설정",
-      "commands": "명령어"
+      "commands": "명령어",
+      "recent": "Recent"
     },
     "pin": "패널 고정",
     "unpin": "패널 고정 해제",

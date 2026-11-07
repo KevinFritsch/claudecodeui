@@ -70,7 +70,8 @@
     },
     "tabs": {
       "settings": "Paramètres",
-      "commands": "Commandes"
+      "commands": "Commandes",
+      "recent": "Recent"
     },
     "pin": "Épingler le panneau",
     "unpin": "Détacher le panneau",

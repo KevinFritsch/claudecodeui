@@ -87,7 +87,8 @@
     },
     "tabs": {
       "settings": "Ajustes",
-      "commands": "Comandos"
+      "commands": "Comandos",
+      "recent": "Recent"
     },
     "pin": "Fijar el panel abierto",
     "unpin": "Desfijar el panel",

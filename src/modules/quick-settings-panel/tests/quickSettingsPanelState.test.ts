@@ -19,8 +19,8 @@ import type { QuickSettingsPanelState } from '@/modules/quick-settings-panel/hoo
 
 const STORAGE_KEY = 'quickSettingsPanel';
 
-const closedUnpinned: QuickSettingsPanelState = { isOpen: false, pinned: false, tab: 'settings' };
-const openUnpinned: QuickSettingsPanelState = { isOpen: true, pinned: false, tab: 'settings' };
+const closedUnpinned: QuickSettingsPanelState = { isOpen: false, pinned: false, tab: 'recent' };
+const openUnpinned: QuickSettingsPanelState = { isOpen: true, pinned: false, tab: 'recent' };
 const docked: QuickSettingsPanelState = { isOpen: true, pinned: true, tab: 'commands' };
 
 beforeEach(() => {
@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 test('no stored entry yields the defaults', () => {
-  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: false, tab: 'settings' });
+  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: false, tab: 'recent' });
 });
 
 test('a stored pin and tab are read back', () => {
@@ -40,19 +40,19 @@ test('a stored pin and tab are read back', () => {
 test('corrupt JSON falls back to the defaults', () => {
   localStorage.setItem(STORAGE_KEY, '{not json');
 
-  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: false, tab: 'settings' });
+  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: false, tab: 'recent' });
 });
 
 test('a non-object entry falls back to the defaults', () => {
   localStorage.setItem(STORAGE_KEY, 'null');
 
-  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: false, tab: 'settings' });
+  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: false, tab: 'recent' });
 });
 
 test('an unknown tab is ignored while a valid pin is kept', () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ pinned: true, tab: 'plugins' }));
 
-  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: true, tab: 'settings' });
+  assert.deepEqual(readStoredQuickSettingsPanelState(), { pinned: true, tab: 'recent' });
 });
 
 test('a non-boolean pin is treated as unpinned', () => {
@@ -76,10 +76,10 @@ test('close hides an open unpinned panel and is a no-op when already closed', ()
 
 test('pinning opens the panel and unpinning keeps it open as an overlay', () => {
   const pinned = quickSettingsPanelReducer(closedUnpinned, { type: 'togglePin', canPin: true });
-  assert.deepEqual(pinned, { isOpen: true, pinned: true, tab: 'settings' });
+  assert.deepEqual(pinned, { isOpen: true, pinned: true, tab: 'recent' });
 
   const unpinned = quickSettingsPanelReducer(pinned, { type: 'togglePin', canPin: true });
-  assert.deepEqual(unpinned, { isOpen: true, pinned: false, tab: 'settings' });
+  assert.deepEqual(unpinned, { isOpen: true, pinned: false, tab: 'recent' });
 });
 
 test('close cannot hide a docked panel', () => {
@@ -105,10 +105,10 @@ test('mobile ignores a pin request', () => {
 test('a pin stored on desktop does not trap the panel open on mobile', () => {
   // The stored pin is kept (it applies again on desktop) but the panel behaves
   // as an unpinned overlay: toggle and close both work.
-  const stored: QuickSettingsPanelState = { isOpen: true, pinned: true, tab: 'settings' };
+  const stored: QuickSettingsPanelState = { isOpen: true, pinned: true, tab: 'recent' };
   assert.equal(quickSettingsPanelReducer(stored, { type: 'close', canPin: false }).isOpen, false);
   const toggled = quickSettingsPanelReducer(stored, { type: 'toggle' });
-  assert.deepEqual(toggled, { isOpen: false, pinned: true, tab: 'settings' });
+  assert.deepEqual(toggled, { isOpen: false, pinned: true, tab: 'recent' });
 });
 
 test('leaving the desktop breakpoint collapses a docked panel but leaves an overlay alone', () => {
@@ -138,7 +138,7 @@ test('the hook starts a pinned panel closed and unpinned on mobile without erasi
 });
 
 test('the hook keeps a docked panel and its handle in step across a viewport change', () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ pinned: true, tab: 'settings' }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ pinned: true, tab: 'recent' }));
 
   const { result, rerender } = renderHook(
     ({ canPin }: { canPin: boolean }) => useQuickSettingsPanelState({ canPin }),
@@ -170,7 +170,7 @@ test('the hook persists pin and tab changes but not open/closed', () => {
   act(() => {
     result.current.toggle();
   });
-  assert.deepEqual(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? ''), { pinned: false, tab: 'settings' });
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? ''), { pinned: false, tab: 'recent' });
 
   act(() => {
     result.current.selectTab('commands');

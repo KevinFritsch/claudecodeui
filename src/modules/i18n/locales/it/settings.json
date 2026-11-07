@@ -70,7 +70,8 @@
     },
     "tabs": {
       "settings": "Impostazioni",
-      "commands": "Comandi"
+      "commands": "Comandi",
+      "recent": "Recent"
     },
     "pin": "Fissa il pannello aperto",
     "unpin": "Sblocca il pannello",

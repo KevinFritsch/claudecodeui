@@ -70,7 +70,8 @@
     },
     "tabs": {
       "settings": "設定",
-      "commands": "コマンド"
+      "commands": "コマンド",
+      "recent": "Recent"
     },
     "pin": "パネルを固定",
     "unpin": "パネルの固定を解除",

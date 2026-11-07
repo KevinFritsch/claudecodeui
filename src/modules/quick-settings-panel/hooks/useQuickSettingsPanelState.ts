@@ -4,7 +4,7 @@ import type { QuickSettingsTab } from '@/shared/types';
 
 const PANEL_STATE_STORAGE_KEY = 'quickSettingsPanel';
 
-const QUICK_SETTINGS_TABS: QuickSettingsTab[] = ['settings', 'commands'];
+const QUICK_SETTINGS_TABS: QuickSettingsTab[] = ['recent', 'commands'];
 
 /** The part of the panel state that survives a reload. */
 type StoredQuickSettingsPanelState = {
@@ -31,7 +31,7 @@ type QuickSettingsPanelAction =
 
 const DEFAULT_STORED_STATE: StoredQuickSettingsPanelState = {
   pinned: false,
-  tab: 'settings',
+  tab: 'recent',
 };
 
 const isQuickSettingsTab = (value: unknown): value is QuickSettingsTab => (

@@ -87,7 +87,8 @@
     },
     "tabs": {
       "settings": "设置",
-      "commands": "命令"
+      "commands": "命令",
+      "recent": "Recent"
     },
     "pin": "固定面板",
     "unpin": "取消固定面板",

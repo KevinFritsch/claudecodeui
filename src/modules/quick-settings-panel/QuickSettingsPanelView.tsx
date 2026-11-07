@@ -1,22 +1,19 @@
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import { useDeviceSettings } from '@/shared/hooks/useDeviceSettings';
 import { useProjectSlashCommands } from '@/shared/hooks/useProjectSlashCommands';
 import { useSelectedProvider } from '@/shared/hooks/useSelectedProvider';
-import { useUiPreferences, useSetUiPreference } from '@/shared/context/UiPreferencesContext';
-import { useTheme } from '@/shared/context/ThemeContext';
 import { useQuickSettingsDrag } from '@/modules/quick-settings-panel/hooks/useQuickSettingsDrag';
 import { useQuickSettingsPanelState } from '@/modules/quick-settings-panel/hooks/useQuickSettingsPanelState';
 import type {
-  PreferenceToggleKey,
   Project,
-  QuickSettingsPreferences,
   SlashCommand,
 } from '@/shared/types';
 import { getQuickSettingsTabId, getQuickSettingsTabPanelId } from '@/shared/utils';
 import QuickSettingsCommandsTab from '@/modules/quick-settings-panel/QuickSettingsCommandsTab';
-import QuickSettingsContent from '@/modules/quick-settings-panel/QuickSettingsContent';
+import QuickAccessRecent from '@/modules/quick-settings-panel/QuickAccessRecent';
+import { useHorizontalSwipe } from '@/modules/quick-settings-panel/hooks/useHorizontalSwipe';
 import QuickSettingsHandle from '@/modules/quick-settings-panel/QuickSettingsHandle';
 import QuickSettingsPanelHeader from '@/modules/quick-settings-panel/QuickSettingsPanelHeader';
 import QuickSettingsTabs from '@/modules/quick-settings-panel/QuickSettingsTabs';
@@ -26,10 +23,25 @@ type QuickSettingsPanelViewProps = {
   // Receives a command picked on the Commands tab; the caller decides where
   // it goes (the project workspace hands it to the chat composer).
   onInsertCommand?: (command: SlashCommand) => void;
+  /** Opens a session picked in the Recent tab. */
+  onOpenSession: (sessionId: string) => void;
+  activeSessionId: string | null;
+  /** Mobile swipes: left-to-right opens the sidebar, unless this panel is open (then it closes it). */
+  isSidebarOpen: boolean;
+  onOpenSidebar: () => void;
+  onCloseSidebar: () => void;
 };
 
 /** Exported as QuickSettingsPanel and rendered by the project-workspace module as its quick settings drawer — an overlay by default, docked into the workspace row when pinned. */
-function QuickSettingsPanelView({ selectedProject, onInsertCommand }: QuickSettingsPanelViewProps) {
+function QuickSettingsPanelView({
+  selectedProject,
+  onInsertCommand,
+  onOpenSession,
+  activeSessionId,
+  isSidebarOpen,
+  onOpenSidebar,
+  onCloseSidebar,
+}: QuickSettingsPanelViewProps) {
   const { isMobile } = useDeviceSettings({ trackPWA: false });
   const canPin = !isMobile;
   const {
@@ -41,9 +53,6 @@ function QuickSettingsPanelView({ selectedProject, onInsertCommand }: QuickSetti
     selectTab,
     togglePin,
   } = useQuickSettingsPanelState({ canPin });
-  const { isDarkMode } = useTheme();
-  const preferences = useUiPreferences();
-  const setPreference = useSetUiPreference();
   const provider = useSelectedProvider();
   const {
     commands,
@@ -60,25 +69,6 @@ function QuickSettingsPanelView({ selectedProject, onInsertCommand }: QuickSetti
     startDrag,
     consumeSuppressedClick,
   } = useQuickSettingsDrag({ isMobile });
-
-  const quickSettingsPreferences = useMemo<QuickSettingsPreferences>(() => ({
-    showRawParameters: preferences.showRawParameters,
-    showThinking: preferences.showThinking,
-    sendByCtrlEnter: preferences.sendByCtrlEnter,
-    voiceEnabled: preferences.voiceEnabled,
-  }), [
-    preferences.sendByCtrlEnter,
-    preferences.showRawParameters,
-    preferences.showThinking,
-    preferences.voiceEnabled,
-  ]);
-
-  const handlePreferenceChange = useCallback(
-    (key: PreferenceToggleKey, value: boolean) => {
-      setPreference(key, value);
-    },
-    [setPreference],
-  );
 
   const handleToggleFromHandle = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -130,6 +120,19 @@ function QuickSettingsPanelView({ selectedProject, onInsertCommand }: QuickSetti
     };
   }, [close, isOpen, isPinned]);
 
+  // Swipe right-to-left: close the sidebar if it is open, else open this panel.
+  // Swipe left-to-right: close this panel if it is open, else open the sidebar.
+  useHorizontalSwipe(isMobile, {
+    onSwipeLeft: () => {
+      if (isSidebarOpen) onCloseSidebar();
+      else if (!isOpen) toggle();
+    },
+    onSwipeRight: () => {
+      if (isOpen) close();
+      else if (!isSidebarOpen) onOpenSidebar();
+    },
+  });
+
   const panelBody = (
     <div className="flex h-full flex-col">
       <QuickSettingsPanelHeader
@@ -145,11 +148,14 @@ function QuickSettingsPanelView({ selectedProject, onInsertCommand }: QuickSetti
         aria-labelledby={getQuickSettingsTabId(activeTab)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        {activeTab === 'settings' ? (
-          <QuickSettingsContent
-            isDarkMode={isDarkMode}
-            preferences={quickSettingsPreferences}
-            onPreferenceChange={handlePreferenceChange}
+        {activeTab === 'recent' ? (
+          <QuickAccessRecent
+            isOpen={isOpen}
+            activeSessionId={activeSessionId}
+            onOpenSession={(sessionId) => {
+              onOpenSession(sessionId);
+              if (!isPinned) close();
+            }}
           />
         ) : (
           <QuickSettingsCommandsTab
