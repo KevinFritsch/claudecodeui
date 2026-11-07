@@ -116,6 +116,7 @@ const renderSessions = (overrides: ListOverrides = {}) =>
       onSaveEditingSession: noop,
       onProjectSelect: noop,
       onSessionSelect: noop,
+      onArchiveSession: noop,
       onDeleteSession: noop,
       onLoadMoreSessions: noop,
       onNewSession: noop,
@@ -618,7 +619,7 @@ test('the bin archives a session at once, without the archive-or-delete dialog',
   const { result } = renderController(onSessionDelete);
 
   await act(async () => {
-    result.current.showDeleteSessionConfirmation('s1', 'First', { immediate: true });
+    result.current.archiveSession('s1');
   });
   assert.equal(result.current.pendingDeletion, null);
   await vi.waitFor(() => assert.equal(onSessionDelete.mock.calls.length, 1));
