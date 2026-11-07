@@ -172,6 +172,8 @@ function QuickSettingsPanelView({
 
   return (
     <>
+      {/* Kvn: on touch screens a right-to-left swipe opens the panel, so the edge handle only takes room. */}
+      {!isMobile && (
       <QuickSettingsHandle
         isOpen={isOpen}
         isDragging={isDragging}
@@ -180,6 +182,7 @@ function QuickSettingsPanelView({
         onMouseDown={startDrag}
         onTouchStart={startDrag}
       />
+      )}
 
       {/* Docked: a layout column while open, gone while collapsed via the handle (the pin is kept). */}
       {isPinned ? (
