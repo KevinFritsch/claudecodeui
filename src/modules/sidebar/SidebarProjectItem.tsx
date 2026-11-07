@@ -264,7 +264,7 @@ function SidebarProjectItem({
                       <Star
                         className={cn(
                           'h-4 w-4 transition-colors',
-                          isStarred ? 'fill-current text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground/60',
+                          isStarred ? 'fill-current text-amber-600/60 dark:text-amber-100/75' : 'text-muted-foreground/60',
                         )}
                       />
                     </button>
@@ -397,7 +397,7 @@ function SidebarProjectItem({
                   <Star
                     className={cn(
                       'h-3 w-3 transition-colors',
-                      isStarred ? 'fill-current text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground',
+                      isStarred ? 'fill-current text-amber-600/60 dark:text-amber-100/75' : 'text-muted-foreground',
                     )}
                   />
                 </div>
