@@ -4,7 +4,7 @@ import { Check, CheckSquare, Edit2, GitBranch, Loader2, MoreHorizontal, Pencil, 
 import type { TFunction } from 'i18next';
 
 import { Badge, Dialog, DialogContent, DialogTitle, LLMProviderLogo, Tooltip, buttonVariants } from '@/shared/ui';
-import { cn } from '@/shared/utils';
+import { cn, withAlpha } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { useSessionForkingProviders } from '@/shared/hooks/useProviderCapabilities';
@@ -71,6 +71,7 @@ function SidebarSessionItem({
 }: SidebarSessionItemProps) {
   const isCompact = useCompactSidebar();
   const { getProjectColor } = useProjectColors();
+  const projectColor = getProjectColor(project.projectId, project.displayName);
   const sessionView = createSessionViewModel(session, currentTime, t);
   const isSelected = selectedSession?.id === session.id;
   const compactSessionAge = formatCompactAge(sessionView.sessionTime, currentTime);
@@ -217,6 +218,15 @@ function SidebarSessionItem({
 
   return (
     <div className="group relative">
+      {/* Kvn: the selected session lights up its stretch of the project's tree line
+          (the list's left border sits 7px to the left of each row). */}
+      {!isCompact && isSelected && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -left-[7.5px] bottom-1 top-1 w-[2px] rounded-full"
+          style={{ backgroundColor: projectColor }}
+        />
+      )}
 
       {isCompact && (
       <div>
@@ -490,7 +500,7 @@ function SidebarSessionItem({
             isSelected ? 'bg-accent hover:bg-accent' : 'hover:bg-accent/50',
             isChecked && 'bg-primary/10',
           )}
-          style={isSelected ? { boxShadow: `inset 2px 0 0 ${getProjectColor(project.projectId, project.displayName)}` } : undefined}
+          style={isSelected ? { backgroundColor: withAlpha(projectColor, 0.13) } : undefined}
           // Left-click keeps in-app navigation; Ctrl/Cmd/middle-click and the
           // native right-click menu use the href to open a new tab/window.
           // While selecting, every click ticks the row instead.
