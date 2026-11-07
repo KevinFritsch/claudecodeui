@@ -79,29 +79,39 @@ export default function QuickAccessRecent({
           {items?.map((item) => {
             const color = getProjectColor(item.projectId, item.projectDisplayName ?? '');
             const isActive = item.sessionId === activeSessionId;
+            const isClaude = !item.provider || item.provider === 'claude';
             return (
               <li key={item.sessionId}>
+                {/* Same language as the sidebar: a project-coloured node, the open
+                    session tinted in its project colour, no repeated Claude logo. */}
                 <button
                   type="button"
                   onClick={() => onOpenSession(item.sessionId)}
                   className={cn(
-                    'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent active:bg-accent/80',
-                    isActive && 'bg-accent/70',
+                    'flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
+                    isActive ? '' : 'hover:bg-accent/50 active:bg-accent/70',
                   )}
-                  style={isActive ? { boxShadow: `inset 3px 0 0 ${color}` } : undefined}
+                  style={isActive ? { backgroundColor: withAlpha(color, 0.13) } : undefined}
                 >
-                  <LLMProviderLogo provider={(item.provider || 'claude') as LLMProvider} className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span className="flex h-5 w-2 flex-shrink-0 items-center justify-center">
+                    {isActive ? (
+                      <span className="h-3.5 w-[3px] rounded-full" style={{ backgroundColor: color }} />
+                    ) : isClaude ? (
+                      <span className="h-[6px] w-[6px] rounded-full" style={{ backgroundColor: withAlpha(color, 0.75) }} />
+                    ) : (
+                      <LLMProviderLogo provider={item.provider as LLMProvider} className="h-3.5 w-3.5" />
+                    )}
+                  </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">{item.sessionTitle || 'Untitled session'}</span>
-                    {item.topic && <span className="block truncate text-xs text-muted-foreground">{item.topic}</span>}
-                    <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span
-                        className="h-2 w-2 flex-shrink-0 rounded-full"
-                        style={{ backgroundColor: color, boxShadow: `0 0 0 2px ${withAlpha(color, 0.2)}` }}
-                        aria-hidden
-                      />
-                      <span className="truncate">{item.projectDisplayName ?? 'No project'}</span>
-                      <span>· {age(item.lastActivity)}</span>
+                    <span className="flex items-baseline gap-2">
+                      <span className={cn('min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground', isActive && 'font-medium')}>
+                        {item.sessionTitle || 'Untitled session'}
+                      </span>
+                      <span className="flex-shrink-0 text-[11px] text-muted-foreground">{age(item.lastActivity)}</span>
+                    </span>
+                    {item.topic && <span className="block truncate text-[11px] leading-4 text-muted-foreground/75">{item.topic}</span>}
+                    <span className="mt-0.5 block truncate text-[11px] leading-4" style={{ color: withAlpha(color, 0.9) }}>
+                      {item.projectDisplayName ?? 'No project'}
                     </span>
                   </span>
                 </button>
