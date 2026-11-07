@@ -127,7 +127,7 @@ export default function SidebarProjectSessions({
       : t('sessions.selectAll');
 
   return (
-    <div className="group/sessions mb-1 ml-4 space-y-px border-l pl-1.5" style={{ borderColor: withAlpha(projectColor, 0.35) }}>
+    <div className="group/sessions mb-1 ml-4 space-y-0.5 border-l pl-1.5" style={{ borderColor: withAlpha(projectColor, 0.35) }}>
       {isSelecting ? (
         <div className={cn('space-y-1', isCompact && 'px-3')}>
           {/* Wraps rather than clips: at the narrowest sidebar width a long

@@ -220,13 +220,20 @@ function SidebarSessionItem({
     <div className="group relative">
       {/* Kvn: the selected session lights up its stretch of the project's tree line
           (the list's left border sits 7px to the left of each row). */}
-      {!isCompact && isSelected && (
+      {!isCompact && (isSelected ? (
         <span
           aria-hidden
           className="pointer-events-none absolute -left-[7.5px] bottom-1 top-1 w-[2px] rounded-full"
           style={{ backgroundColor: projectColor }}
         />
-      )}
+      ) : (
+        // A node on the tree line beside each session's title separates the rows.
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -left-[9px] top-[14px] h-[5px] w-[5px] rounded-full ring-2 ring-background transition-colors"
+          style={{ backgroundColor: withAlpha(projectColor, 0.55) }}
+        />
+      ))}
 
       {isCompact && (
       <div>
@@ -571,7 +578,7 @@ function SidebarSessionItem({
               {(showTopic || sessionView.messageCount > 0) && (
                 <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
                   {showTopic && (
-                    <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-muted-foreground" title={topic}>
+                    <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-muted-foreground/75" title={topic}>
                       {topic}
                     </span>
                   )}
