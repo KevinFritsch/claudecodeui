@@ -31,7 +31,7 @@ export const formatCompactAge = (
   if (minutes < 60) return `${minutes}m`;
 
   const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours}hr` : `${Math.floor(hours / 24)}d`;
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 };
 
 const getCreatedTimestamp = (session: SessionWithProvider): string => {

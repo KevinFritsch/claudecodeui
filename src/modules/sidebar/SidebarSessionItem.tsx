@@ -8,6 +8,7 @@ import { cn } from '@/shared/utils';
 import { SESSION_DRAG_MIME } from '@/shared/constants';
 import type { LLMProvider, Project, ProjectSession, SessionDragPayload, SessionWithProvider, SessionDeleteOptions } from '@/shared/types';
 import { useSessionForkingProviders } from '@/shared/hooks/useProviderCapabilities';
+import { useProjectColors } from '@/shared/hooks/useProjectColors';
 import { PROVIDER_LABELS, createSessionViewModel, formatCompactAge } from '@/modules/sidebar/utils/sidebarProjectFormatting';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
 import { requestSessionPlacement } from '@/shared/sessionPlacement';
@@ -69,6 +70,7 @@ function SidebarSessionItem({
   t,
 }: SidebarSessionItemProps) {
   const isCompact = useCompactSidebar();
+  const { getProjectColor } = useProjectColors();
   const sessionView = createSessionViewModel(session, currentTime, t);
   const isSelected = selectedSession?.id === session.id;
   const compactSessionAge = formatCompactAge(sessionView.sessionTime, currentTime);
@@ -181,7 +183,23 @@ function SidebarSessionItem({
       />
     </Tooltip>
   ) : null;
-  const sessionMarker = (
+  // Kvn: almost every session is Claude, so its logo on every row was noise.
+  // Claude rows get a slim status gutter (the dot alone); other providers keep their logo.
+  const isClaude = !session.__provider || session.__provider === 'claude';
+  const statusDotClass = showAttentionIndicator
+    ? 'animate-pulse bg-amber-500'
+    : showBackgroundIndicator
+      ? 'animate-pulse bg-purple-500 dark:bg-purple-400'
+      : 'bg-green-500';
+  const sessionMarker = isClaude ? (
+    <span className="flex h-5 w-2 flex-shrink-0 items-center justify-center">
+      {statusPip && (
+        <Tooltip content={indicatorLabel} position="right">
+          <span role="status" aria-label={indicatorLabel} className={cn('block h-1.5 w-1.5 rounded-full', statusDotClass)} />
+        </Tooltip>
+      )}
+    </span>
+  ) : (
     <span className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
       <LLMProviderLogo provider={session.__provider} className="h-3.5 w-3.5" />
       {statusPip}
@@ -472,6 +490,7 @@ function SidebarSessionItem({
             isSelected ? 'bg-accent hover:bg-accent' : 'hover:bg-accent/50',
             isChecked && 'bg-primary/10',
           )}
+          style={isSelected ? { boxShadow: `inset 2px 0 0 ${getProjectColor(project.projectId, project.displayName)}` } : undefined}
           // Left-click keeps in-app navigation; Ctrl/Cmd/middle-click and the
           // native right-click menu use the href to open a new tab/window.
           // While selecting, every click ticks the row instead.

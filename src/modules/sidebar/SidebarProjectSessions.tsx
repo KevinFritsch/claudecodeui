@@ -127,7 +127,7 @@ export default function SidebarProjectSessions({
       : t('sessions.selectAll');
 
   return (
-    <div className="mb-1 ml-4 space-y-px border-l pl-1.5" style={{ borderColor: withAlpha(projectColor, 0.35) }}>
+    <div className="group/sessions mb-1 ml-4 space-y-px border-l pl-1.5" style={{ borderColor: withAlpha(projectColor, 0.35) }}>
       {isSelecting ? (
         <div className={cn('space-y-1', isCompact && 'px-3')}>
           {/* Wraps rather than clips: at the narrowest sidebar width a long
@@ -194,7 +194,7 @@ export default function SidebarProjectSessions({
               type="button"
               aria-label="New session beside the current chat"
               title="New session beside the current chat"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-accent/60 hover:text-foreground focus-visible:opacity-100 group-hover/sessions:opacity-100"
               onClick={() => {
                 requestSessionPlacement('beside');
                 onNewSession(project);
@@ -207,8 +207,9 @@ export default function SidebarProjectSessions({
             <button
               type="button"
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground',
-                isCompact ? 'h-9' : 'h-7',
+                'flex items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground',
+                // Desktop: only on hover over the project's sessions, to keep the list calm.
+                isCompact ? 'h-9' : 'h-7 opacity-0 focus-visible:opacity-100 group-hover/sessions:opacity-100',
               )}
               onClick={() => onSetSessionSelection({ projectId: project.projectId, sessionIds: new Set() })}
             >
