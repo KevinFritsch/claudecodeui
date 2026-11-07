@@ -19,6 +19,20 @@ export default {
         serif: ['Merriweather', 'Georgia', 'Cambria', '"Times New Roman"', 'serif'],
       },
       colors: {
+        // Kvn: the stock Tailwind blue read as dated; every blue-* is a soft iris instead.
+        blue: {
+          50: "#f3f3ff",
+          100: "#e8e8ff",
+          200: "#d4d3fe",
+          300: "#b5b3fc",
+          400: "#9693f8",
+          500: "#7c77f1",
+          600: "#6660e4",
+          700: "#5650c9",
+          800: "#4743a3",
+          900: "#3a3880",
+          950: "#24234d",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
