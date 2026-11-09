@@ -13,11 +13,11 @@ import path from 'node:path';
 const TIMEOUT_MS = 90_000;
 const DEFAULT_VOICE_GUIDE = path.join(os.homedir(), 'Documents/dev/claude-my-plugins/plugins/golfn/skills/slack-voice/SKILL.md');
 
-function runClaude(prompt: string, model: string): Promise<string> {
+export function runClaude(prompt: string, model: string, extraArgs: string[] = []): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'claude',
-      ['-p', '--setting-sources', '', '--no-session-persistence', '--model', model, '--disable-slash-commands'],
+      ['-p', '--setting-sources', '', '--no-session-persistence', '--model', model, '--disable-slash-commands', ...extraArgs],
       { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] },
     );
     let output = '';
@@ -41,7 +41,7 @@ function runClaude(prompt: string, model: string): Promise<string> {
   });
 }
 
-function readVoiceGuide(file: string | undefined): string {
+export function readVoiceGuide(file: string | undefined): string {
   try {
     return fs.readFileSync(file || DEFAULT_VOICE_GUIDE, 'utf8').replace(/^---[\s\S]*?---\s*/, '');
   } catch {

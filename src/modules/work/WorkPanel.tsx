@@ -24,6 +24,7 @@ import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, t
 import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
 import { SessionButton, jiraSeed, prSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
 import SlackSection from '@/modules/work/SlackSection';
+import SlackCompose from '@/modules/work/SlackCompose';
 import { WORK_SEEN_EVENT } from '@/modules/work/useWorkBadge';
 import { WORK_LINKS_CHANGED_EVENT } from '@/modules/work/SessionWorkLinks';
 
@@ -825,6 +826,8 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
       label: 'Slack',
       count: items.slack.items.length,
       content: (
+        <>
+        <SlackCompose projectPath={projectPath} />
         <SlackSection
           projectPath={projectPath}
           mentions={items.slack.items}
@@ -836,6 +839,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
             ? { ...cur, slack: { ...cur.slack, items: next.mentions }, slackResolved: next.resolved }
             : cur))}
         />
+        </>
       ),
     }] : []),
     ...(config.bitbucket && items.pullRequests ? [{

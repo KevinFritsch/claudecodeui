@@ -56,7 +56,7 @@ const stateCache = new Map<string, MentionState>();
 const userCache = new Map<string, { name: string; avatar: string | null }>();
 let myHandle: string | null = null;
 
-class SlackClient {
+export class SlackClient {
   constructor(private readonly token: string) {}
 
   async call<T>(method: string, params: Record<string, string | number>, post = false): Promise<T> {
@@ -85,12 +85,12 @@ class SlackClient {
   }
 }
 
-function client(secrets: WorkSecrets): SlackClient {
+export function client(secrets: WorkSecrets): SlackClient {
   if (!secrets.SLACK_USER_TOKEN) throw new Error('Slack is not configured: SLACK_USER_TOKEN is needed in secrets.env.');
   return new SlackClient(secrets.SLACK_USER_TOKEN);
 }
 
-async function userInfo(slack: SlackClient, id: string): Promise<{ name: string; avatar: string | null }> {
+export async function userInfo(slack: SlackClient, id: string): Promise<{ name: string; avatar: string | null }> {
   const cached = userCache.get(id);
   if (cached) return cached;
   try {
@@ -113,7 +113,7 @@ async function userName(slack: SlackClient, id: string): Promise<string> {
 }
 
 /** Turns Slack markup (<@U1>, <#C1|name>, <url|label>) into plain readable text. */
-async function renderText(slack: SlackClient, raw: string): Promise<string> {
+export async function renderText(slack: SlackClient, raw: string): Promise<string> {
   const ids = [...new Set([...raw.matchAll(/<@([A-Z0-9]+)(?:\|[^>]*)?>/g)].map((m) => m[1]))];
   const names = new Map(await Promise.all(ids.map(async (id) => [id, await userName(slack, id)] as const)));
   return raw

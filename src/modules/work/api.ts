@@ -68,6 +68,17 @@ export type SlackMention = {
   replyCount: number;
 };
 
+export type ComposeTarget = { kind: 'dm' | 'channel'; id: string; label: string };
+
+export type ComposePreview = {
+  target: ComposeTarget | null;
+  note: string | null;
+  text: string;
+  threads: Array<{ ts: string; author: string; text: string; permalink: string; channel: ComposeTarget }>;
+  suggestedThreadTs: string | null;
+  directory: ComposeTarget[];
+};
+
 export type WorkLink = {
   itemType: 'jira' | 'todo' | 'slack' | 'pr';
   itemKey: string;
@@ -143,6 +154,10 @@ export const workApi = {
     request<{ id: string; done: boolean }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done } }),
   slackAiReply: (projectPath: string, id: string, threadTs: string, author: string, instruction: string) =>
     request<{ text: string }>('/api/work/slack/ai-reply', { method: 'POST', body: { projectPath, id, threadTs, author, instruction } }),
+  composePrepare: (projectPath: string, instruction: string) =>
+    request<ComposePreview>('/api/work/slack/compose/prepare', { method: 'POST', body: { projectPath, instruction } }),
+  composeDeliver: (projectPath: string, payload: { mode: 'draft' | 'send'; target: ComposeTarget; threadTs: string | null; text: string }) =>
+    request<{ mode: string; via: string }>('/api/work/slack/compose/deliver', { method: 'POST', body: { projectPath, ...payload } }),
   slackReply: (projectPath: string, id: string, threadTs: string, text: string) =>
     request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text } }),
   badge: (projectPath: string) => request<{ count: number }>(`/api/work/badge?${q(projectPath)}`),

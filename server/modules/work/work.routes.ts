@@ -17,6 +17,7 @@ import { resolvedService } from './services/resolved.service.js';
 import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
 import { draftSlackReply } from './services/ai-reply.service.js';
+import { deliverMessage, prepareMessage, type ComposeTarget } from './services/slack-compose.service.js';
 import { markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
@@ -309,6 +310,44 @@ router.post('/slack/ai-reply', asyncHandler(async (req: Request, res: Response) 
     model: config.slack?.replyModel,
   }));
   res.json(createApiSuccessResponse({ text }));
+}));
+
+function requireSlack(projectPath: string) {
+  const config = requireConfig(projectPath);
+  if (!config.slack) throw new AppError('Slack is not set up for this project.', { code: 'WORK_NOT_CONFIGURED', statusCode: 404 });
+  return config.slack;
+}
+
+/** Compose step 1: understand a plain-words request into recipient, thread options and message text. Nothing is sent. */
+router.post('/slack/compose/prepare', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const projectPath = readProjectPath(body.projectPath);
+  const slack = requireSlack(projectPath);
+  const instruction = typeof body.instruction === 'string' ? body.instruction.trim().slice(0, 3000) : '';
+  if (!instruction) throw new AppError('Write what to send and to whom.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  const preview = await slackAction(() => prepareMessage(readSecrets(), {
+    me: slack.userId,
+    instruction,
+    voiceGuideFile: slack.voiceGuideFile,
+    model: slack.replyModel,
+  }));
+  res.json(createApiSuccessResponse(preview));
+}));
+
+/** Compose step 2: save the reviewed message as a Slack draft, or send it as the user. */
+router.post('/slack/compose/deliver', asyncHandler(async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const projectPath = readProjectPath(body.projectPath);
+  requireSlack(projectPath);
+  const mode = body.mode === 'send' ? 'send' : body.mode === 'draft' ? 'draft' : null;
+  const target = body.target as ComposeTarget | undefined;
+  const text = typeof body.text === 'string' ? body.text.trim() : '';
+  const threadTs = typeof body.threadTs === 'string' && /^\d+\.\d+$/.test(body.threadTs) ? body.threadTs : null;
+  if (!mode || !text || !target || (target.kind !== 'dm' && target.kind !== 'channel') || !/^[A-Z0-9]+$/.test(String(target.id))) {
+    throw new AppError('mode, target and text are required.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  }
+  const result = await slackAction(() => deliverMessage(readSecrets(), { mode, target, threadTs, text: text.slice(0, 4000) }));
+  res.json(createApiSuccessResponse({ mode, ...result }));
 }));
 
 /** Replies in the message's thread, as the user. */
