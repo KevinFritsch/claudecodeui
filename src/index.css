@@ -495,6 +495,9 @@
   .dark textarea::placeholder {
     color: rgb(75 85 99) !important; /* gray-600 - darker gray */
     opacity: 1 !important;
+    /* Kvn: the dark textarea rule above forces -webkit-text-fill-color to near-white,
+       which also painted placeholders white (they looked like typed text). */
+    -webkit-text-fill-color: rgb(107 114 128) !important; /* gray-500 */
   }
   
   /* More specific selector for chat input textarea */
