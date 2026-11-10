@@ -126,7 +126,7 @@ export default function CompareFileItem({
           ) : isRenameOnly ? (
             <div className="p-4 text-center text-sm text-muted-foreground">{t('git:compare.renameOnly')}</div>
           ) : (
-            <GitDiffViewer diff={diff} isMobile={isMobile} wrapText={wrapText} />
+            <GitDiffViewer diff={diff} filePath={file.path} isMobile={isMobile} wrapText={wrapText} />
           )}
         </div>
       </div>

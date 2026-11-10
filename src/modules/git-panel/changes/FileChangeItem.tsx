@@ -125,7 +125,7 @@ export default function FileChangeItem({
 
         {/* Kvn: full height (no box-in-a-box scrolling), so "Expand all" reads like one long diff. */}
         <div>
-          {diff && <GitDiffViewer diff={diff} isMobile={isMobile} wrapText={wrapText} />}
+          {diff && <GitDiffViewer diff={diff} filePath={filePath} isMobile={isMobile} wrapText={wrapText} />}
         </div>
       </div>
     </div>
