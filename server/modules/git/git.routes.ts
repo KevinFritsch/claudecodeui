@@ -1,4 +1,5 @@
 // @ts-nocheck -- temporary while Git workflows are extracted into the injected service.
+import os from 'os';
 import path from 'path';
 
 import express from 'express';
@@ -451,6 +452,94 @@ router.get('/repos', async (req, res) => {
     res.json({ repos, nested: !isRepo });
   } catch (error) {
     res.status(500).json({ error: 'Failed to list repositories', details: error.message });
+  }
+});
+
+// Kvn: the repos (often worktrees, e.g. wt/gol-3590-…/golfn-api) a Claude
+// session has been working in, most recent first, read from where it ran
+// commands ("cwd") and the files it edited. Lets Source Control open on the
+// session's own checkout instead of whatever repo was picked last.
+const sessionRepoCache = new Map();
+
+async function findSessionTranscript(sessionId) {
+  const cached = sessionRepoCache.get(sessionId);
+  if (cached?.file) {
+    try {
+      await fs.stat(cached.file);
+      return cached.file;
+    } catch {
+      // moved or deleted; look again
+    }
+  }
+  const root = path.join(os.homedir(), '.claude', 'projects');
+  let dirs = [];
+  try {
+    dirs = await fs.readdir(root);
+  } catch {
+    return null;
+  }
+  for (const dir of dirs) {
+    const candidate = path.join(root, dir, `${sessionId}.jsonl`);
+    try {
+      await fs.stat(candidate);
+      return candidate;
+    } catch {
+      // not in this folder
+    }
+  }
+  return null;
+}
+
+async function findRepoRoot(dirPath, basePath) {
+  let current = dirPath;
+  while (current.startsWith(basePath + path.sep)) {
+    if (await isRepoRoot(current)) return current;
+    current = path.dirname(current);
+  }
+  return null;
+}
+
+router.get('/session-repos', async (req, res) => {
+  const { project, sessionId } = req.query;
+  if (!project || typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(sessionId)) {
+    return res.status(400).json({ error: 'Project id and session id are required' });
+  }
+  try {
+    const basePath = await getActualProjectPath(project);
+    const file = await findSessionTranscript(sessionId);
+    if (!file) return res.json({ repos: [] });
+    const { size } = await fs.stat(file);
+    let entry = sessionRepoCache.get(sessionId);
+    if (!entry || entry.file !== file || entry.size !== size || entry.basePath !== basePath) {
+      const text = await fs.readFile(file, 'utf8');
+      // Last position each folder shows up at, so the newest work sorts first.
+      const lastSeen = new Map();
+      const pattern = /"(cwd|file_path)":"((?:[^"\\]|\\.)*)"/g;
+      let match;
+      while ((match = pattern.exec(text))) {
+        let value;
+        try {
+          value = JSON.parse(`"${match[2]}"`);
+        } catch {
+          continue;
+        }
+        if (!path.isAbsolute(value)) continue;
+        const dir = match[1] === 'cwd' ? value : path.dirname(value);
+        if (dir.startsWith(basePath + path.sep)) lastSeen.set(dir, match.index);
+      }
+      const roots = new Map();
+      for (const [dir, position] of lastSeen) {
+        const root = await findRepoRoot(dir, basePath);
+        if (root && (roots.get(root) ?? -1) < position) roots.set(root, position);
+      }
+      const ordered = [...roots.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([root]) => root);
+      entry = { file, size, basePath, roots: ordered };
+      sessionRepoCache.set(sessionId, entry);
+    }
+    const repos = await Promise.all(entry.roots.map((root) => describeRepo(basePath, root)));
+    res.json({ repos });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to read the session repositories', details: error.message });
   }
 });
 

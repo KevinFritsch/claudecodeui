@@ -247,6 +247,7 @@ function WorkspaceMain({
               onFileOpen={handleFileOpen}
               onProjectSelect={onProjectSelect}
               onProjectsRefresh={onProjectsRefresh}
+              sessionId={pane.session?.id ?? null}
             />
           </div>
         )}

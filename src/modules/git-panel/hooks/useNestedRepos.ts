@@ -11,6 +11,8 @@ export type NestedRepoSummary = {
   ahead: number;
   behind: number;
   isWorktree: boolean;
+  /** Kvn: the open session worked in this repo (newest first in the list). */
+  inSession?: boolean;
   error?: string;
 };
 
@@ -34,12 +36,30 @@ function storeRepo(projectId: string, repo: string) {
   }
 }
 
+const sessionKey = (projectId: string, sessionId: string) => `${STORAGE_PREFIX}${projectId}:session:${sessionId}`;
+
+function readSessionRepo(projectId: string, sessionId: string): string | null {
+  try {
+    return window.localStorage.getItem(sessionKey(projectId, sessionId));
+  } catch {
+    return null;
+  }
+}
+
+function storeSessionRepo(projectId: string, sessionId: string, repo: string) {
+  try {
+    window.localStorage.setItem(sessionKey(projectId, sessionId), repo);
+  } catch {
+    // per-viewer convenience only
+  }
+}
+
 /**
  * Detects git repositories nested inside a project folder that is not itself a
  * repo (e.g. a task folder with `golfn-api/` and `golfn-app/` worktrees) and
  * tracks which one the Source Control panel is showing.
  */
-export function useNestedRepos(projectId: string | null) {
+export function useNestedRepos(projectId: string | null, sessionId: string | null = null) {
   const [repos, setRepos] = useState<NestedRepoSummary[]>([]);
   const [isNested, setIsNested] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
@@ -48,15 +68,30 @@ export function useNestedRepos(projectId: string | null) {
   const refreshRepos = useCallback(async (signal?: AbortSignal) => {
     if (!projectId) return;
     try {
-      const response = await api.git.repos(projectId, { signal });
+      const [response, sessionData] = await Promise.all([
+        api.git.repos(projectId, { signal }),
+        // Kvn: the repos/worktrees this session worked in (often deeper than the scan reaches).
+        sessionId
+          ? api.git.sessionRepos(projectId, sessionId, { signal })
+            .then((r) => (r.ok ? r.json() as Promise<ReposResponse> : { repos: [] }))
+            .catch(() => ({ repos: [] } as ReposResponse))
+          : Promise.resolve({ repos: [] } as ReposResponse),
+      ]);
       const data = (await response.json()) as ReposResponse;
       if (signal?.aborted) return;
-      const list = data.repos ?? [];
+      const sessionRepos = data.nested ? (sessionData.repos ?? []).map((repo) => ({ ...repo, inSession: true })) : [];
+      const sessionPaths = new Set(sessionRepos.map((repo) => repo.path));
+      const list = [...sessionRepos, ...(data.repos ?? []).filter((repo) => !sessionPaths.has(repo.path))];
       setRepos(list);
       setIsNested(Boolean(data.nested));
       setSelectedRepo((current) => {
         if (!data.nested) return null;
         if (current && list.some((repo) => repo.path === current)) return current;
+        if (sessionId) {
+          const picked = readSessionRepo(projectId, sessionId);
+          if (picked && list.some((repo) => repo.path === picked)) return picked;
+          if (sessionRepos[0]) return sessionRepos[0].path;
+        }
         const stored = readStoredRepo(projectId);
         if (stored && list.some((repo) => repo.path === stored)) return stored;
         // Prefer a repo with uncommitted work, then the first one.
@@ -69,7 +104,7 @@ export function useNestedRepos(projectId: string | null) {
     } finally {
       if (!signal?.aborted) setIsLoaded(true);
     }
-  }, [projectId]);
+  }, [projectId, sessionId]);
 
   useEffect(() => {
     setRepos([]);
@@ -84,7 +119,8 @@ export function useNestedRepos(projectId: string | null) {
   const selectRepo = useCallback((repo: string) => {
     setSelectedRepo(repo);
     if (projectId) storeRepo(projectId, repo);
-  }, [projectId]);
+    if (projectId && sessionId) storeSessionRepo(projectId, sessionId, repo);
+  }, [projectId, sessionId]);
 
   return { repos, isNested, selectedRepo, selectRepo, refreshRepos, isLoaded };
 }

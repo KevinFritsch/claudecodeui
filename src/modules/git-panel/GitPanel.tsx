@@ -26,6 +26,8 @@ type GitPanelProps = {
   onProjectSelect?: (project: Project) => void;
   /** Silently re-syncs the sidebar project list after worktree projects are created/archived. */
   onProjectsRefresh?: () => void;
+  /** Kvn: the pane's session; Source Control opens on the repo it works in. */
+  sessionId?: string | null;
 };
 
 /** Exported through the git-panel barrel; the project-workspace module renders it as the source-control sidebar tab. */
@@ -35,6 +37,7 @@ export default function GitPanel({
   onFileOpen: workspaceOnFileOpen,
   onProjectSelect,
   onProjectsRefresh,
+  sessionId = null,
 }: GitPanelProps) {
   const { t } = useTranslation();
   // A project folder that is not a repo but holds several (e.g. a task folder
@@ -47,7 +50,7 @@ export default function GitPanel({
     selectRepo,
     refreshRepos,
     isLoaded: reposLoaded,
-  } = useNestedRepos(workspaceProject?.projectId ?? null);
+  } = useNestedRepos(workspaceProject?.projectId ?? null, sessionId);
   const activeRepo = isNested ? selectedRepo : null;
   const selectedProject = useMemo<Project | null>(() => {
     if (!workspaceProject || !activeRepo) return workspaceProject;

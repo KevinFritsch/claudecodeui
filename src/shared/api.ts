@@ -383,6 +383,8 @@ export const api = {
     /** Lists the repos in a project: itself, or repos nested in a multi-repo task folder. */
     repos: (projectId: string, options: ApiRequestOptions = {}) =>
       get(`/api/git/repos${query({ project: projectId })}`, options),
+    sessionRepos: (projectId: string, sessionId: string, options: ApiRequestOptions = {}) =>
+      get(`/api/git/session-repos${query({ project: projectId, sessionId })}`, options),
     status: (projectId: string, options: ApiRequestOptions = {}) =>
       get(`/api/git/status${query({ ...gitTarget(projectId) })}`, options),
     diff: (projectId: string, filePath: string, options: ApiRequestOptions = {}) =>

@@ -29,6 +29,13 @@ function RepoStats({ repo }: { repo: NestedRepoSummary }) {
   );
 }
 
+/** "wt/gol-3590-x/golfn-api" → name "golfn-api", folder "wt/gol-3590-x". */
+function splitRepoPath(repo: NestedRepoSummary): { name: string; folder: string | null } {
+  if (repo.path === '.' || !repo.path.includes('/')) return { name: repo.name, folder: null };
+  const index = repo.path.lastIndexOf('/');
+  return { name: repo.path.slice(index + 1), folder: repo.path.slice(0, index) };
+}
+
 /**
  * Repo picker for a project folder that holds several repos. Kvn: a one-line
  * switcher with a dropdown (the always-open list took the whole panel and
@@ -40,6 +47,8 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
   const [filter, setFilter] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
   const selected = repos.find((repo) => repo.path === selectedRepo);
+  const selectedParts = selected ? splitRepoPath(selected) : null;
+  const hasSessionRepos = repos.some((repo) => repo.inSession);
   const othersWithChanges = repos.filter((repo) => repo.path !== selectedRepo && repo.changes > 0).length;
 
   useEffect(() => {
@@ -84,8 +93,13 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="truncate font-medium">
-              {selected?.name ?? t('git:repos.pick', { defaultValue: 'Pick a repository' })}
+              {selectedParts?.name ?? t('git:repos.pick', { defaultValue: 'Pick a repository' })}
             </span>
+            {selectedParts?.folder && (
+              <span className="hidden min-w-0 truncate text-[11px] text-muted-foreground/80 sm:inline" title={selected?.path}>
+                {selectedParts.folder}
+              </span>
+            )}
             {selected?.branch && (
               <span className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
                 <GitBranch className="h-3 w-3 shrink-0" />
@@ -96,7 +110,7 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
         </span>
         {selected && <RepoStats repo={selected} />}
         <span className="shrink-0 text-[11px] text-muted-foreground">
-          {repos.length} repos{othersWithChanges > 0 ? ` · ${othersWithChanges} changed` : ''}
+          {selected?.inSession ? 'this session · ' : ''}{repos.length} repos{othersWithChanges > 0 ? ` · ${othersWithChanges} changed` : ''}
         </span>
         <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -119,10 +133,17 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
             </div>
           )}
           <ul role="listbox" className="max-h-[50vh] overflow-y-auto">
-            {shown.map((repo) => {
+            {shown.map((repo, index) => {
               const isSelected = repo.path === selectedRepo;
+              const parts = splitRepoPath(repo);
+              const heading = hasSessionRepos && (index === 0 || shown[index - 1].inSession !== repo.inSession)
+                ? (repo.inSession ? 'This session' : 'All repositories')
+                : null;
               return (
                 <li key={repo.path}>
+                  {heading && (
+                    <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{heading}</div>
+                  )}
                   <button
                     type="button"
                     role="option"
@@ -132,7 +153,10 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
                   >
                     {isSelected ? <Check className="h-3.5 w-3.5 shrink-0 text-primary" /> : <span className="w-3.5 shrink-0" />}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{repo.name}</span>
+                      <span className="flex min-w-0 items-baseline gap-1.5">
+                        <span className="truncate font-medium">{parts.name}</span>
+                        {parts.folder && <span className="truncate text-[11px] text-muted-foreground/80">{parts.folder}</span>}
+                      </span>
                       <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
                         <GitBranch className="h-3 w-3 shrink-0" />
                         <span className="truncate">{repo.branch ?? t('git:repos.noBranch', { defaultValue: 'no branch' })}</span>

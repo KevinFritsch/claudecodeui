@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { access } from 'node:fs/promises';
 
 import { projectsDb } from '@/modules/database/index.js';
@@ -74,8 +75,15 @@ const open: WorktreeServices['open'] = (input) => openWorktreeAsProject(input, {
  * This is the module's composition root: it is the only location that combines
  * concrete adapters with the independently testable workflow functions.
  */
+const GIT_REPO_SEPARATOR = '::repo=';
+
 const worktreeServices: WorktreeServices = {
-  resolveProjectPath(projectId) {
+  resolveProjectPath(scopedProjectId) {
+    // Kvn: in a multi-repo folder the Source Control panel scopes its project
+    // id to one repo ("<id>::repo=<relative path>", see scopeGitProjectId).
+    const separatorIndex = scopedProjectId.indexOf(GIT_REPO_SEPARATOR);
+    const projectId = separatorIndex < 0 ? scopedProjectId : scopedProjectId.slice(0, separatorIndex);
+    const repo = separatorIndex < 0 ? '' : scopedProjectId.slice(separatorIndex + GIT_REPO_SEPARATOR.length);
     const projectPath = worktreeProjects.getProjectPathById(projectId);
     if (!projectPath) {
       throw new AppError(`Unable to resolve project path for "${projectId}"`, {
@@ -83,8 +91,14 @@ const worktreeServices: WorktreeServices = {
         statusCode: 404,
       });
     }
+    if (!repo || repo === '.') return projectPath;
 
-    return projectPath;
+    const base = path.resolve(projectPath);
+    const resolved = path.resolve(base, repo);
+    if (repo.includes('\0') || path.isAbsolute(repo) || !resolved.startsWith(base + path.sep)) {
+      throw new AppError('Invalid repository path', { code: 'INVALID_REPO_PATH', statusCode: 400 });
+    }
+    return resolved;
   },
   list: (input) => listWorktrees(input, {
     runGit: runGitCommand,
