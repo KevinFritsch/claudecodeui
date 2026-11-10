@@ -29,7 +29,7 @@ type PickerItem = { value: string; label: string; description?: string };
 /** One-tap model switches, shown when the provider's catalog has them (Claude). */
 const QUICK_MODELS = [
   { value: 'claude-opus-5-5', short: 'Opus' },
-  { value: 'claude-fable-5-1', short: 'Fable' },
+  { value: 'claude-fable-5-2', short: 'Fable' },
   { value: 'claude-sonnet-5-5', short: 'Sonnet' },
 ];
 

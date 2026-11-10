@@ -61,9 +61,15 @@ export const CLAUDE_PREDEFINED_MODELS: ProviderModelsDefinition = {
       },
     },
     {
+      value: 'claude-fable-5-2',
+      label: 'Fable 5.2',
+      description: 'Most capable Claude model for the hardest, longest-running tasks (Nov 2026).',
+      effort: FULL_EFFORT,
+    },
+    {
       value: 'claude-fable-5-1',
       label: 'Fable 5.1',
-      description: 'Most capable Claude model for the hardest, longest-running tasks.',
+      description: 'Previous Fable release.',
       effort: FULL_EFFORT,
     },
     {
