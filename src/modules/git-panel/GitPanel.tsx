@@ -280,7 +280,8 @@ export default function GitPanel({
             <WorktreesView
               key={selectedProject.fullPath}
               isMobile={isMobile}
-              selectedProject={workspaceProject ?? selectedProject}
+              // Kvn: the repo-scoped project, so a multi-repo folder lists the selected repo's worktrees.
+              selectedProject={selectedProject ?? workspaceProject}
               localBranches={localBranches}
               onProjectSelect={onProjectSelect}
               onProjectsRefresh={onProjectsRefresh}

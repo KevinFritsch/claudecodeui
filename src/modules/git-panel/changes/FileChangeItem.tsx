@@ -99,7 +99,7 @@ export default function FileChangeItem({
       </div>
 
       <div
-        className={`duration-400 overflow-hidden bg-muted/50 transition-all ease-in-out ${isExpanded && diff ? 'max-h-[600px] translate-y-0 opacity-100' : 'max-h-0 -translate-y-1 opacity-0'
+        className={`duration-400 overflow-hidden bg-muted/50 transition-all ease-in-out ${isExpanded && diff ? 'max-h-none translate-y-0 opacity-100' : 'max-h-0 -translate-y-1 opacity-0'
           }`}
       >
         <div className="flex items-center justify-between border-b border-border p-2">
@@ -123,7 +123,8 @@ export default function FileChangeItem({
           )}
         </div>
 
-        <div className="max-h-96 overflow-y-auto">
+        {/* Kvn: full height (no box-in-a-box scrolling), so "Expand all" reads like one long diff. */}
+        <div>
           {diff && <GitDiffViewer diff={diff} isMobile={isMobile} wrapText={wrapText} />}
         </div>
       </div>

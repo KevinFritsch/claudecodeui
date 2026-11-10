@@ -96,6 +96,11 @@ export default function ChangesView({
     };
   }, [onExpandedFilesChange]);
 
+  const allExpanded = changedFiles.length > 0 && changedFiles.every((filePath) => expandedFiles.has(filePath));
+  const toggleExpandAll = useCallback(() => {
+    setExpandedFiles(allExpanded ? new Set() : new Set(changedFiles));
+  }, [allExpanded, changedFiles]);
+
   const toggleFileExpanded = useCallback((filePath: string) => {
     setExpandedFiles((previous) => {
       const next = new Set(previous);
@@ -258,6 +263,17 @@ export default function ChangesView({
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('git:changes.changesCount', { n: unstagedFiles.size })}
               </span>
+              <span className="flex items-center gap-3">
+              {changedFiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleExpandAll}
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  title={allExpanded ? 'Collapse every diff' : 'Open every file\'s diff'}
+                >
+                  {allExpanded ? 'Collapse all' : 'Expand all'}
+                </button>
+              )}
               {unstagedFiles.size > 0 && (
                 <button
                   onClick={() => {
@@ -270,6 +286,7 @@ export default function ChangesView({
                   {t('git:changes.stageAll')}
                 </button>
               )}
+              </span>
             </div>
             {unstagedFiles.size === 0 ? (
               <div className="px-3 py-2 text-xs italic text-muted-foreground">{t('git:changes.allStaged')}</div>
