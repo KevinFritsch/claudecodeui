@@ -150,8 +150,9 @@ export const workApi = {
     request<{ linked: boolean }>('/api/work/links', { method: 'DELETE', body: { projectPath, itemType, itemKey, sessionId } }),
   resolve: (projectPath: string, itemType: WorkLink['itemType'], itemKeys: string[], resolved: boolean) =>
     request<{ count: number; resolved: boolean }>('/api/work/resolve', { method: 'POST', body: { projectPath, itemType, itemKeys, resolved } }),
-  slackDone: (projectPath: string, id: string, done: boolean) =>
-    request<{ id: string; done: boolean }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done } }),
+  slackDone: (projectPath: string, id: string, done: boolean, emoji?: string) =>
+    request<{ id: string; done: boolean; emoji: string }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done, emoji } }),
+  slackCustomEmoji: () => request<{ custom: Record<string, string> | null }>('/api/work/slack/emoji'),
   slackAiReply: (projectPath: string, id: string, threadTs: string, author: string, instruction: string) =>
     request<{ text: string }>('/api/work/slack/ai-reply', { method: 'POST', body: { projectPath, id, threadTs, author, instruction } }),
   composePrepare: (projectPath: string, instruction: string) =>

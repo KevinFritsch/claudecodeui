@@ -18,7 +18,7 @@ import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
 import { draftSlackReply } from './services/ai-reply.service.js';
 import { deliverMessage, prepareMessage, type ComposeTarget } from './services/slack-compose.service.js';
-import { markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
+import { OPEN_REACTIONS, isReactionName, listCustomEmoji, markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
@@ -282,16 +282,26 @@ router.post('/resolve', asyncHandler(async (req: Request, res: Response) => {
 router.post('/slack/done', asyncHandler(async (req: Request, res: Response) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const { projectPath, id } = readSlackId(body);
+  if (body.emoji !== undefined && !isReactionName(body.emoji)) throw new AppError('Invalid emoji name.', { code: 'INVALID_REQUEST', statusCode: 400 });
+  const emoji = (body.emoji as string | undefined) ?? 'white_check_mark';
   const secrets = readSecrets();
-  await slackAction(() => (body.done === false ? unmarkDone(secrets, id) : markDone(secrets, id)));
+  await slackAction(() => (body.done === false ? unmarkDone(secrets, id, emoji) : markDone(secrets, id, emoji)));
   if (body.done === false) {
     markStale(projectPath);
   } else {
     patchSnapshot(projectPath, (snap) => {
-      if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => m.id !== id);
+      if (!snap.slack) return;
+      snap.slack.items = OPEN_REACTIONS.has(emoji)
+        ? snap.slack.items.map((m) => (m.id === id ? { ...m, myReactions: [...new Set([...m.myReactions, emoji])] } : m))
+        : snap.slack.items.filter((m) => m.id !== id);
     });
   }
-  res.json(createApiSuccessResponse({ id, done: body.done !== false }));
+  res.json(createApiSuccessResponse({ id, done: body.done !== false, emoji }));
+}));
+
+/** Custom workspace emoji for the reaction picker (null when the token can't list them). */
+router.get('/slack/emoji', asyncHandler(async (_req: Request, res: Response) => {
+  res.json(createApiSuccessResponse({ custom: await listCustomEmoji(readSecrets()) }));
 }));
 
 /** Drafts a reply in the user's voice for them to edit; nothing is sent. */

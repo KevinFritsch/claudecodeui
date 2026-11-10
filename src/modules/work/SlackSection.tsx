@@ -1,8 +1,9 @@
-import { AlertTriangle, Sparkles, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, Undo2, Users, X } from 'lucide-react';
+import { AlertTriangle, Sparkles, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, SmilePlus, Undo2, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import { cn } from '@/shared/utils';
 import { workApi, type SlackMention } from '@/modules/work/api';
+import EmojiPicker, { recordEmojiUse } from '@/modules/work/EmojiPicker';
 import { SessionButton, clip, type SessionActions, type SessionSeed } from '@/modules/work/SessionButton';
 
 const SEND_DELAY_MS = 5_000;
@@ -57,20 +58,26 @@ function ChannelIcon({ kind }: { kind: SlackMention['channelKind'] }) {
   return <Icon className="h-3 w-3 shrink-0" />;
 }
 
-type Closed = { mention: SlackMention; how: 'done' | 'replied' | 'resolved'; at: number };
+type Reaction = { name: string; char: string | null };
+type Closed = { mention: SlackMention; how: 'done' | 'replied' | 'resolved'; at: number; reaction?: Reaction };
+
+/** 👀 means "on it": it marks the message without closing it. */
+const OPEN_REACTIONS = new Set(['eyes']);
 
 function MentionRow({
   mention,
   projectPath,
   sessions,
   onClosed,
+  onReacted,
   isNew,
 }: {
   mention: SlackMention;
   isNew: boolean;
   projectPath: string;
   sessions: SessionActions;
-  onClosed: (mention: SlackMention, how: Closed['how']) => void;
+  onClosed: (mention: SlackMention, how: Closed['how'], reaction?: Reaction) => void;
+  onReacted: (mention: SlackMention) => void;
 }) {
   const [resolving, setResolving] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -83,6 +90,8 @@ function MentionRow({
   const [busy, setBusy] = useState<'done' | 'send' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, tick] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [reactButton, setReactButton] = useState<HTMLButtonElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isLong = mention.text.length > 220 || mention.text.split('\n').length > 3;
 
@@ -110,17 +119,27 @@ function MentionRow({
     return () => window.clearInterval(timer);
   }, [draft, mention, onClosed, projectPath, sendAt]);
 
-  const markDone = async () => {
+  // Any reaction answers the message (and closes it here), except 👀.
+  const react = async (name: string, char: string | null) => {
+    setPickerOpen(false);
+    if (OPEN_REACTIONS.has(name) && mention.myReactions.includes(name)) return;
     setBusy('done');
     setError(null);
     try {
-      await workApi.slackDone(projectPath, mention.id, true);
-      onClosed(mention, 'done');
+      await workApi.slackDone(projectPath, mention.id, true, name);
+      recordEmojiUse(name, char);
+      if (OPEN_REACTIONS.has(name)) {
+        onReacted({ ...mention, myReactions: [...mention.myReactions, name] });
+        setBusy(null);
+      } else {
+        onClosed(mention, 'done', { name, char });
+      }
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
     }
   };
+  const markDone = () => react('white_check_mark', '✅');
 
   const resolve = async () => {
     setResolving(true);
@@ -275,6 +294,19 @@ function MentionRow({
         <button type="button" onClick={() => void markDone()} disabled={busy !== null} className={cn(button, 'hover:border-emerald-500/50 hover:text-emerald-600')} title="React ✅ as you">
           {busy === 'done' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Done
         </button>
+        <button
+          ref={setReactButton}
+          type="button"
+          onClick={() => setPickerOpen((open) => !open)}
+          disabled={busy !== null}
+          aria-label="Add a reaction"
+          aria-expanded={pickerOpen}
+          title="React as you (👍 🔥 💯…). Any reaction but 👀 closes it here."
+          className={cn(button, 'px-1.5', pickerOpen && 'bg-accent text-foreground')}
+        >
+          <SmilePlus className="h-3.5 w-3.5" />
+        </button>
+        {pickerOpen && <EmojiPicker anchor={reactButton} onPick={(name, char) => void react(name, char)} onClose={() => setPickerOpen(false)} />}
         {!replying && (
           <>
             <button type="button" onClick={() => setReplying(true)} className={button} title="Reply in the thread">
@@ -305,7 +337,7 @@ function MentionRow({
   );
 }
 
-/** Slack messages that tag the user and still need them: not ✅'d and not replied to. */
+/** Slack messages that tag or DM the user and still need them: no reaction from them (👀 aside) and no reply. */
 export default function SlackSection({
   projectPath,
   mentions,
@@ -357,12 +389,16 @@ export default function SlackSection({
     return () => window.clearInterval(timer);
   }, [closed.length]);
 
-  const onClosed = (mention: SlackMention, how: Closed['how']) => {
+  const onClosed = (mention: SlackMention, how: Closed['how'], reaction?: Reaction) => {
     onChange({
       mentions: mentions.filter((m) => m.id !== mention.id),
       resolved: how === 'resolved' ? byNewest([mention, ...resolved]) : resolved,
     });
-    setClosed((list) => [...list.filter((c) => c.mention.id !== mention.id), { mention, how, at: Date.now() }]);
+    setClosed((list) => [...list.filter((c) => c.mention.id !== mention.id), { mention, how, at: Date.now(), reaction }]);
+  };
+
+  const onReacted = (mention: SlackMention) => {
+    onChange({ mentions: mentions.map((m) => (m.id === mention.id ? mention : m)), resolved });
   };
 
   const undoDone = async (entry: Closed) => {
@@ -372,7 +408,7 @@ export default function SlackSection({
         await setResolved([entry.mention], false);
         return;
       }
-      await workApi.slackDone(projectPath, entry.mention.id, false);
+      await workApi.slackDone(projectPath, entry.mention.id, false, entry.reaction?.name);
       onChange({ mentions: byNewest([entry.mention, ...mentions]), resolved });
     } catch (e) {
       setUndoError((e as Error).message);
@@ -412,7 +448,7 @@ export default function SlackSection({
             <li key={entry.mention.id} className="flex items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
               <Check className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                {entry.how === 'done' ? '✅ added on' : entry.how === 'resolved' ? 'Resolved' : 'Replied to'} {entry.mention.author}'s message
+                {entry.how === 'done' ? `${entry.reaction?.char ?? (entry.reaction ? `:${entry.reaction.name}:` : '✅')} added on` : entry.how === 'resolved' ? 'Resolved' : 'Replied to'} {entry.mention.author}'s message
               </span>
               {entry.how !== 'replied' ? (
                 <button type="button" onClick={() => void undoDone(entry)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-emerald-500/20">
@@ -433,7 +469,7 @@ export default function SlackSection({
 
       <ul className="divide-y divide-border/50">
         {mentions.map((mention) => (
-          <MentionRow key={mention.id} mention={mention} isNew={newKeys.has(`slack:${mention.id}`)} projectPath={projectPath} sessions={sessions} onClosed={onClosed} />
+          <MentionRow key={mention.id} mention={mention} isNew={newKeys.has(`slack:${mention.id}`)} projectPath={projectPath} sessions={sessions} onClosed={onClosed} onReacted={onReacted} />
         ))}
       </ul>
       {!error && mentions.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Inbox zero: nothing on Slack is waiting on you.</p>}

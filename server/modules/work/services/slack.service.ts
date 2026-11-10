@@ -48,6 +48,8 @@ export type SlackMention = {
 type MentionState = { state: 'open' | 'answered'; checkedAt: number; myReactions: string[]; replyCount: number };
 
 const DONE_REACTIONS = new Set(['white_check_mark', 'heavy_check_mark', 'ballot_box_with_check', 'done']);
+/** Reactions that mean "seen, on it" and keep the message open; any other reaction from the user closes it. */
+export const OPEN_REACTIONS = new Set(['eyes']);
 const OPEN_RECHECK_MS = 90_000;
 /** In a busy channel, only a message from the user within this window counts as their answer. */
 const CHANNEL_ANSWER_WINDOW_S = 3 * 3600;
@@ -162,7 +164,8 @@ async function checkState(slack: SlackClient, me: string, match: SearchMatch, th
   });
   const own = data.messages.find((m) => m.ts === match.ts);
   const mine = (own?.reactions ?? []).filter((r) => r.users?.includes(me)).map((r) => r.name);
-  const checked = mine.some((name) => DONE_REACTIONS.has(name));
+  // A 👍, 🔥, 💯… from the user is an answer too; only 👀 ("on it") keeps it open.
+  const checked = mine.some((name) => !OPEN_REACTIONS.has(name));
   let replied = data.messages.some((m) => m.user === me && Number(m.ts) > Number(match.ts));
 
   // A top-level message is often answered in the conversation itself rather
@@ -290,26 +293,61 @@ function parseId(id: string): { channel: string; ts: string } {
   return { channel: match[1], ts: match[2] };
 }
 
-/** ✅ the message (as the user), which is how they close a request in Slack. */
-export async function markDone(secrets: WorkSecrets, id: string): Promise<void> {
+/** Slack reaction names: letters, digits, and - _ + ' (custom emoji included). */
+export function isReactionName(name: unknown): name is string {
+  return typeof name === 'string' && /^[a-z0-9_+\-']{1,100}$/.test(name);
+}
+
+/**
+ * Reacts as the user (✅ by default, which is how they close a request in
+ * Slack). Any reaction but 👀 closes the message here too.
+ */
+export async function markDone(secrets: WorkSecrets, id: string, name = 'white_check_mark'): Promise<void> {
   const { channel, ts } = parseId(id);
   try {
-    await client(secrets).call('reactions.add', { channel, timestamp: ts, name: 'white_check_mark' }, true);
+    await client(secrets).call('reactions.add', { channel, timestamp: ts, name }, true);
   } catch (error) {
     if (!/already_reacted/.test((error as Error).message)) throw error;
   }
   const cached = stateCache.get(id);
-  stateCache.set(id, { myReactions: [], replyCount: 0, ...cached, state: 'answered', checkedAt: Date.now() });
+  const myReactions = [...new Set([...(cached?.myReactions ?? []), name])];
+  stateCache.set(id, {
+    replyCount: 0,
+    ...cached,
+    myReactions,
+    state: OPEN_REACTIONS.has(name) ? (cached?.state ?? 'open') : 'answered',
+    checkedAt: Date.now(),
+  });
 }
 
-export async function unmarkDone(secrets: WorkSecrets, id: string): Promise<void> {
+export async function unmarkDone(secrets: WorkSecrets, id: string, name = 'white_check_mark'): Promise<void> {
   const { channel, ts } = parseId(id);
   try {
-    await client(secrets).call('reactions.remove', { channel, timestamp: ts, name: 'white_check_mark' }, true);
+    await client(secrets).call('reactions.remove', { channel, timestamp: ts, name }, true);
   } catch (error) {
     if (!/no_reaction/.test((error as Error).message)) throw error;
   }
   stateCache.delete(id);
+}
+
+let customEmoji: { at: number; map: Record<string, string> | null } | null = null;
+
+/** The workspace's custom emoji (name → image URL), or null without the emoji:read scope. */
+export async function listCustomEmoji(secrets: WorkSecrets): Promise<Record<string, string> | null> {
+  if (customEmoji && Date.now() - customEmoji.at < 3_600_000) return customEmoji.map;
+  let map: Record<string, string> | null = null;
+  try {
+    const data = await client(secrets).call<{ emoji: Record<string, string> }>('emoji.list', {});
+    map = {};
+    for (const [name, value] of Object.entries(data.emoji)) {
+      const target = value.startsWith('alias:') ? data.emoji[value.slice(6)] : value;
+      if (target && /^https:\/\//.test(target)) map[name] = target;
+    }
+  } catch {
+    map = null;
+  }
+  customEmoji = { at: Date.now(), map };
+  return map;
 }
 
 /** Posts a reply in the message's thread, as the user. */
