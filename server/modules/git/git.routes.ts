@@ -16,6 +16,8 @@ type GitRouterDependencies = {
   fileSystem: typeof import('node:fs/promises');
   spawnProcess: typeof import('cross-spawn').default;
   resolveProjectPathById(projectId: string): string | null;
+  /** The session's transcript (JSONL) path, from an app or provider session id. */
+  resolveSessionTranscript?(sessionId: string): string | null;
   queryClaude: ProviderRunFunction;
   queryCursor: ProviderRunFunction;
 };
@@ -462,6 +464,15 @@ router.get('/repos', async (req, res) => {
 const sessionRepoCache = new Map();
 
 async function findSessionTranscript(sessionId) {
+  const known = dependencies.resolveSessionTranscript?.(sessionId);
+  if (known) {
+    try {
+      await fs.stat(known);
+      return known;
+    } catch {
+      // fall back to looking by file name
+    }
+  }
   const cached = sessionRepoCache.get(sessionId);
   if (cached?.file) {
     try {
