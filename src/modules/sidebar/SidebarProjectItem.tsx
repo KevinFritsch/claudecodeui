@@ -11,6 +11,7 @@ import SidebarProjectSessions from '@/modules/sidebar/SidebarProjectSessions';
 import { useCompactSidebar } from '@/modules/sidebar/hooks/useCompactSidebar';
 import { useProjectColors } from '@/shared/hooks/useProjectColors';
 import { ProjectColorPicker } from '@/modules/sidebar/ProjectColorPicker';
+import { WorkShortcut } from '@/modules/work';
 
 type SidebarProjectItemProps = {
   project: Project;
@@ -270,6 +271,7 @@ function SidebarProjectItem({
                         )}
                       />
                     </button>
+                    <WorkShortcut project={project} projectPath={project.fullPath} size="lg" />
                     <button
                       aria-label={`Delete ${project.displayName}`}
                       className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground active:scale-90 active:bg-red-500/10 active:text-red-500"
@@ -403,6 +405,7 @@ function SidebarProjectItem({
               </>
             ) : (
               <>
+                <WorkShortcut project={project} projectPath={project.fullPath} />
                 <div
                   className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-accent group-hover:opacity-100"
                   onClick={(event) => {

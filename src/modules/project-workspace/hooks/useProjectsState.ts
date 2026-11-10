@@ -10,6 +10,7 @@ import type { ServerEvent,
   ProjectSession,IsSessionProcessing } from '@/shared/types';
 import { mergeProjectSelectionMetadata } from '@/modules/project-workspace/utils/projectSelectionMetadata';
 import { readSelectedProvider } from '@/shared/selectedProvider';
+import { OPEN_WORK_EVENT } from '@/modules/work';
 
 type UseProjectsStateArgs = {
   sessionId?: string;
@@ -1037,6 +1038,18 @@ export function useProjectsState({
     },
     [isMobile, navigate],
   );
+
+  // Kvn: the sidebar's Work button selects the project and opens its Work tab.
+  useEffect(() => {
+    const onOpenWork = (event: Event) => {
+      const project = (event as CustomEvent<{ project?: Project }>).detail?.project;
+      if (!project) return;
+      handleProjectSelect(project);
+      setActiveTab('work');
+    };
+    window.addEventListener(OPEN_WORK_EVENT, onOpenWork);
+    return () => window.removeEventListener(OPEN_WORK_EVENT, onOpenWork);
+  }, [handleProjectSelect]);
 
   const handleSessionSelect = useCallback(
     (session: ProjectSession) => {
