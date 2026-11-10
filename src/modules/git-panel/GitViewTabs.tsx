@@ -39,17 +39,17 @@ export default function GitViewTabs({ activeView, isHidden, changeCount, onChang
             role="tab"
             aria-selected={activeView === id}
             onClick={() => onChange(id)}
-            className={`min-w-max flex-none snap-start px-4 py-2 text-sm font-medium transition-colors sm:min-w-0 sm:flex-1 ${
+            className={`min-w-max flex-none snap-start px-3 py-1.5 text-[13px] font-medium transition-colors sm:min-w-0 sm:flex-1 ${
               activeView === id
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <span className="flex items-center justify-center gap-2">
-              <Icon className="h-4 w-4" />
+              <Icon className="h-3.5 w-3.5" />
               <span>{t(labelKey)}</span>
               {id === 'changes' && changeCount > 0 && (
-                <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-semibold text-primary">
+                <span className="rounded-full bg-primary/15 px-1.5 text-[11px] font-semibold text-primary">
                   {changeCount}
                 </span>
               )}

@@ -254,13 +254,19 @@ function stripDiffHeaders(diff) {
   let startIncluding = false;
 
   for (const line of lines) {
-    // Skip all header lines including diff --git, index, file mode, and --- / +++ file paths
-    if (line.startsWith('diff --git') ||
-        line.startsWith('index ') ||
+    // Skip file header lines (diff --git, index, file mode, --- / +++ paths).
+    // Kvn: only outside a hunk; inside one, "--- x" is a removed "-- x" line
+    // (SQL comment, markdown rule) and must stay.
+    if (line.startsWith('diff --git')) {
+      startIncluding = false;
+      continue;
+    }
+    if (!startIncluding && (
+      line.startsWith('index ') ||
         line.startsWith('new file mode') ||
         line.startsWith('deleted file mode') ||
         line.startsWith('---') ||
-        line.startsWith('+++')) {
+        line.startsWith('+++'))) {
       continue;
     }
 

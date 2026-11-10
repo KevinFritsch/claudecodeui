@@ -9,6 +9,8 @@ type GitRepoSwitcherProps = {
   selectedRepo: string | null;
   isMobile: boolean;
   onSelect: (repo: string) => void;
+  /** Kvn: compact chip inside the branch row (the branch shows next to it). */
+  inline?: boolean;
 };
 
 function RepoStats({ repo }: { repo: NestedRepoSummary }) {
@@ -41,7 +43,7 @@ function splitRepoPath(repo: NestedRepoSummary): { name: string; folder: string 
  * switcher with a dropdown (the always-open list took the whole panel and
  * pushed the changes and diffs out of view).
  */
-export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelect }: GitRepoSwitcherProps) {
+export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelect, inline = false }: GitRepoSwitcherProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -81,16 +83,19 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
   };
 
   return (
-    <div ref={boxRef} className={`relative border-b border-border/60 ${isMobile ? 'px-2 py-1.5' : 'px-3 py-1.5'}`}>
+    <div ref={boxRef} className={inline ? 'relative min-w-0 shrink' : `relative border-b border-border/60 ${isMobile ? 'px-2 py-1.5' : 'px-3 py-1.5'}`}>
       <button
         type="button"
         onClick={() => setIsOpen((value) => !value)}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/60"
+        title={selected ? `${selected.path} (${repos.length} repos)` : undefined}
+        className={inline
+          ? 'flex min-w-0 max-w-[22rem] items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-accent/60'
+          : 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/60'}
       >
         <FolderGit2 className="h-4 w-4 shrink-0 text-primary" />
-        <span className="min-w-0 flex-1">
+        <span className={inline ? 'min-w-0' : 'min-w-0 flex-1'}>
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="truncate font-medium">
               {selectedParts?.name ?? t('git:repos.pick', { defaultValue: 'Pick a repository' })}
@@ -100,7 +105,7 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
                 {selectedParts.folder}
               </span>
             )}
-            {selected?.branch && (
+            {!inline && selected?.branch && (
               <span className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
                 <GitBranch className="h-3 w-3 shrink-0" />
                 <span className="truncate">{selected.branch}</span>
@@ -108,15 +113,15 @@ export default function GitRepoSwitcher({ repos, selectedRepo, isMobile, onSelec
             )}
           </span>
         </span>
-        {selected && <RepoStats repo={selected} />}
-        <span className="shrink-0 text-[11px] text-muted-foreground">
+        {selected && !inline && <RepoStats repo={selected} />}
+        <span className={inline ? 'hidden' : 'shrink-0 text-[11px] text-muted-foreground'}>
           {selected?.inSession ? 'this session · ' : ''}{repos.length} repos{othersWithChanges > 0 ? ` · ${othersWithChanges} changed` : ''}
         </span>
         <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute left-2 right-2 top-full z-40 mt-1 rounded-lg border border-border bg-popover p-1.5 shadow-lg">
+        <div className={`absolute top-full z-40 mt-1 rounded-lg border border-border bg-popover p-1.5 shadow-lg ${inline ? 'left-0 w-[26rem] max-w-[calc(100vw-2rem)]' : 'left-2 right-2'}`}>
           {repos.length > 6 && (
             <div className="mb-1 flex items-center gap-1.5 rounded-md border border-border/70 px-2">
               <Search className="h-3.5 w-3.5 text-muted-foreground" />

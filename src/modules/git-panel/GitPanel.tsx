@@ -71,7 +71,7 @@ export default function GitPanel({
   }, [workspaceOnFileOpen, activeRepo]);
   const [activeView, setActiveView] = useState<GitPanelView>('changes');
   const [wrapText, setWrapText] = useState(true);
-  const [hasExpandedFiles, setHasExpandedFiles] = useState(false);
+  const [, setHasExpandedFiles] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmationRequest | null>(null);
 
   const {
@@ -168,7 +168,7 @@ export default function GitPanel({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {isNested && repos.length > 0 && (
+      {isNested && repos.length > 0 && isMissingRepository && (
         <GitRepoSwitcher
           repos={repos}
           selectedRepo={selectedRepo}
@@ -178,6 +178,9 @@ export default function GitPanel({
       )}
       {!isMissingRepository && (
         <GitPanelHeader
+          leading={isNested && repos.length > 0 ? (
+            <GitRepoSwitcher repos={repos} selectedRepo={selectedRepo} isMobile={isMobile} onSelect={selectRepo} inline />
+          ) : null}
           isMobile={isMobile}
           currentBranch={currentBranch}
           branches={branches}
@@ -219,7 +222,7 @@ export default function GitPanel({
         <>
           <GitViewTabs
             activeView={activeView}
-            isHidden={hasExpandedFiles}
+            isHidden={false}
             changeCount={changeCount}
             onChange={setActiveView}
           />

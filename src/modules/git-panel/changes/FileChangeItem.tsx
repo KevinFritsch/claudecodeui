@@ -1,4 +1,5 @@
 import { ChevronRight, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { FileStatusCode } from '@/shared/types';
@@ -38,10 +39,27 @@ export default function FileChangeItem({
   const { t } = useTranslation();
   const statusLabel = t(getStatusLabelKey(status));
   const badgeClass = getStatusBadgeClass(status);
+  const slash = filePath.lastIndexOf('/');
+  const directory = slash >= 0 ? filePath.slice(0, slash + 1) : '';
+  const fileName = filePath.slice(slash + 1);
+  const counts = useMemo(() => {
+    let added = 0;
+    let removed = 0;
+    for (const line of (diff ?? '').split('\n')) {
+      if (line.startsWith('+')) added += 1;
+      else if (line.startsWith('-')) removed += 1;
+    }
+    return { added, removed };
+  }, [diff]);
 
   return (
     <div className="border-b border-border last:border-0">
-      <div className={`flex items-center transition-colors hover:bg-accent/50 ${isMobile ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+      {/* Kvn: an open file's header sticks under the toolbar (Bitbucket-style), so collapsing is one click away. */}
+      <div
+        className={`flex items-center transition-colors hover:bg-accent/50 ${isMobile ? 'px-2 py-1.5' : 'px-3 py-1.5'} ${
+          isExpanded ? 'sticky top-8 z-10 border-b border-border/60 bg-muted/90 backdrop-blur' : ''
+        }`}
+      >
         <input
           type="checkbox"
           checked={isSelected}
@@ -70,8 +88,16 @@ export default function FileChangeItem({
             }}
             title={t('git:item.openFileTitle')}
           >
-            {filePath}
+            {directory && <span className="text-muted-foreground">{directory}</span>}
+            <span className={isExpanded ? 'font-semibold' : 'font-medium'}>{fileName}</span>
           </span>
+          {(counts.added > 0 || counts.removed > 0) && (
+            <span className="mr-2 shrink-0 font-mono text-[11px]">
+              {counts.added > 0 && <span className="text-green-600 dark:text-green-400">+{counts.added}</span>}
+              {counts.added > 0 && counts.removed > 0 && ' '}
+              {counts.removed > 0 && <span className="text-red-600 dark:text-red-400">−{counts.removed}</span>}
+            </span>
+          )}
 
           <span className="flex items-center gap-1">
             {(status === 'M' || status === 'D' || status === 'U') && (
@@ -102,6 +128,7 @@ export default function FileChangeItem({
         className={`duration-400 overflow-hidden bg-muted/50 transition-all ease-in-out ${isExpanded && diff ? 'max-h-none translate-y-0 opacity-100' : 'max-h-0 -translate-y-1 opacity-0'
           }`}
       >
+        {isMobile && (
         <div className="flex items-center justify-between border-b border-border p-2">
           <span className="flex items-center gap-2">
             <span className={`inline-flex h-5 w-5 items-center justify-center rounded border text-[10px] font-bold ${badgeClass}`}>
@@ -122,6 +149,7 @@ export default function FileChangeItem({
             </button>
           )}
         </div>
+        )}
 
         {/* Kvn: full height (no box-in-a-box scrolling), so "Expand all" reads like one long diff. */}
         <div>

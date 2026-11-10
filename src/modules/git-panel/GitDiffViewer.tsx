@@ -72,17 +72,44 @@ export default function GitDiffViewer({ diff, filePath = null, isMobile, wrapTex
     };
   }, []);
 
+  // Old/new line numbers per line, from the "@@ -a,b +c,d @@" hunk headers.
+  const lineNumbers = useMemo(() => {
+    let oldLine = 1;
+    let newLine = 1;
+    let inHunk = false;
+    return preview.lines.map((line) => {
+      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      if (hunk) {
+        oldLine = Number(hunk[1]);
+        newLine = Number(hunk[2]);
+        inHunk = true;
+        return null;
+      }
+      if (line.startsWith('diff --git')) inHunk = false;
+      if (!inHunk || line.startsWith('\\')) return null;
+      if (line.startsWith('+')) return { old: null, new: newLine++ };
+      if (line.startsWith('-')) return { old: oldLine++, new: null };
+      return { old: oldLine++, new: newLine++ };
+    });
+  }, [preview.lines]);
+
   // Syntax-colored code per line (null = plain), following file headers in multi-file diffs.
   const tokens = useMemo(() => {
     if (!highlighter) return null;
     let language = highlighter.languageForPath(filePath);
+    let inHunk = false;
     return preview.lines.map((line) => {
-      const headerPath = pathFromHeader(line);
+      if (line.startsWith('@@')) {
+        inHunk = true;
+        return null;
+      }
+      if (line.startsWith('diff --git')) inHunk = false;
+      const headerPath = inHunk ? null : pathFromHeader(line);
       if (headerPath) {
         language = highlighter.languageForPath(headerPath);
         return null;
       }
-      if (!language || line.startsWith('@@') || line.startsWith('---') || line.length > 2000) return null;
+      if (!language || !inHunk || line.length > 2000) return null;
       const isCode = line.startsWith('+') || line.startsWith('-') || line.startsWith(' ');
       return isCode ? highlighter.highlightLine(line.slice(1), language) : null;
     });
@@ -96,30 +123,51 @@ export default function GitDiffViewer({ diff, filePath = null, isMobile, wrapTex
     );
   }
 
+  const wraps = isMobile && wrapText;
+
   const renderDiffLine = (line: string, index: number) => {
-    const isAddition = line.startsWith('+') && !line.startsWith('+++');
-    const isDeletion = line.startsWith('-') && !line.startsWith('---');
+    const numbers = lineNumbers[index];
+    const isAddition = line.startsWith('+') && (numbers !== null || !line.startsWith('+++'));
+    const isDeletion = line.startsWith('-') && (numbers !== null || !line.startsWith('---'));
     const isHeader = line.startsWith('@@');
     const lineTokens = tokens?.[index] ?? null;
+
+    if (isHeader) {
+      return (
+        <div key={index} className="flex bg-primary/5 font-mono text-[11px] leading-5 text-primary/80">
+          <span className="w-[4.5rem] shrink-0 select-none" />
+          <span className={`px-2 ${wraps ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>{line}</span>
+        </div>
+      );
+    }
 
     return (
       <div
         key={index}
-        className={`px-3 py-0.5 font-mono text-xs ${isMobile && wrapText ? 'whitespace-pre-wrap break-all' : 'overflow-x-auto whitespace-pre'
-          } ${isAddition ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' :
+        className={`flex font-mono text-xs leading-5 ${
+          isAddition ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' :
             isDeletion ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300' :
-              isHeader ? 'bg-primary/5 text-primary' :
-                'text-muted-foreground/70'
-          }`}
+              'text-muted-foreground/70'
+        }`}
       >
-        {lineTokens ? (
-          <>
-            <span className="select-none">{line.slice(0, 1)}</span>
-            <span className={`diff-code ${isAddition || isDeletion ? 'text-foreground' : 'text-foreground/70'}`}>
-              {renderTokens(lineTokens, String(index))}
-            </span>
-          </>
-        ) : line}
+        {/* Kvn: old / new line numbers, like Bitbucket's gutter. */}
+        <span className={`flex w-[4.5rem] shrink-0 select-none border-r border-border/40 text-right text-[11px] text-muted-foreground/50 ${
+          isAddition ? 'bg-green-100/60 dark:bg-green-900/30' : isDeletion ? 'bg-red-100/60 dark:bg-red-900/30' : ''
+        }`}
+        >
+          <span className="w-9 pr-1.5">{numbers?.old ?? ''}</span>
+          <span className="w-9 pr-1.5">{numbers?.new ?? ''}</span>
+        </span>
+        <span className={`flex-1 px-2 ${wraps ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+          {lineTokens ? (
+            <>
+              <span className="select-none">{line.slice(0, 1)}</span>
+              <span className={`diff-code ${isAddition || isDeletion ? 'text-foreground' : 'text-foreground/70'}`}>
+                {renderTokens(lineTokens, String(index))}
+              </span>
+            </>
+          ) : line}
+        </span>
       </div>
     );
   };
@@ -131,7 +179,11 @@ export default function GitDiffViewer({ diff, filePath = null, isMobile, wrapTex
           Large diff preview: rendering is limited to keep the tab responsive.
         </div>
       )}
-      {preview.lines.map((line, index) => renderDiffLine(line, index))}
+      <div className={wraps ? '' : 'overflow-x-auto'}>
+        <div className={wraps ? '' : 'min-w-max'}>
+          {preview.lines.map((line, index) => renderDiffLine(line, index))}
+        </div>
+      </div>
     </div>
   );
 }

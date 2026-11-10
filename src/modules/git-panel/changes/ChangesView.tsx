@@ -1,4 +1,4 @@
-import { GitBranch, GitCommit, RefreshCw } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown, GitBranch, GitCommit, Info, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,7 +6,6 @@ import type { ConfirmationRequest, FileStatusCode, GitDiffMap, GitStatusResponse
 import { getAllChangedFiles, hasChangedFiles } from '@/modules/git-panel/utils/gitPanelUtils';
 import CommitComposer from '@/modules/git-panel/changes/CommitComposer';
 import FileChangeList from '@/modules/git-panel/changes/FileChangeList';
-import FileStatusLegend from '@/modules/git-panel/changes/FileStatusLegend';
 
 type ChangesViewProps = {
   isMobile: boolean;
@@ -96,6 +95,18 @@ export default function ChangesView({
     };
   }, [onExpandedFilesChange]);
 
+  const lineTotals = useMemo(() => {
+    let added = 0;
+    let removed = 0;
+    for (const filePath of changedFiles) {
+      for (const line of (gitDiff[filePath] ?? '').split('\n')) {
+        if (line.startsWith('+')) added += 1;
+        else if (line.startsWith('-')) removed += 1;
+      }
+    }
+    return { added, removed };
+  }, [changedFiles, gitDiff]);
+
   const allExpanded = changedFiles.length > 0 && changedFiles.every((filePath) => expandedFiles.has(filePath));
   const toggleExpandAll = useCallback(() => {
     setExpandedFiles(allExpanded ? new Set() : new Set(changedFiles));
@@ -175,14 +186,38 @@ export default function ChangesView({
         isMobile={isMobile}
         projectPath={projectPath}
         selectedFileCount={selectedFiles.size}
-        isHidden={hasExpandedFiles}
+        isHidden={false}
         onCommit={commitSelectedFiles}
         onRequestConfirmation={onRequestConfirmation}
       />
 
-      {!gitStatus?.error && <FileStatusLegend isMobile={isMobile} />}
-
       <div className="flex-1 overflow-y-auto">
+        {/* Kvn: always-reachable toolbar (sticky), so expanded diffs never trap you at the bottom. */}
+        {!isLoading && changedFiles.length > 0 && (
+          <div className="sticky top-0 z-20 flex h-8 items-center gap-3 border-b border-border/60 bg-background/95 px-3 text-xs text-muted-foreground backdrop-blur">
+            <span className="font-medium text-foreground/80">{changedFiles.length} file{changedFiles.length > 1 ? 's' : ''}</span>
+            {(lineTotals.added > 0 || lineTotals.removed > 0) && (
+              <span className="font-mono">
+                <span className="text-green-600 dark:text-green-400">+{lineTotals.added}</span>{' '}
+                <span className="text-red-600 dark:text-red-400">−{lineTotals.removed}</span>
+              </span>
+            )}
+            <span
+              className="inline-flex cursor-help items-center"
+              title="M modified · A added · D deleted · U untracked. Tick a file to stage it."
+            >
+              <Info className="h-3.5 w-3.5" />
+            </span>
+            <button
+              type="button"
+              onClick={toggleExpandAll}
+              className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground/80 hover:bg-accent hover:text-foreground"
+            >
+              {allExpanded ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex h-32 items-center justify-center">
             <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -263,17 +298,6 @@ export default function ChangesView({
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('git:changes.changesCount', { n: unstagedFiles.size })}
               </span>
-              <span className="flex items-center gap-3">
-              {changedFiles.length > 0 && (
-                <button
-                  type="button"
-                  onClick={toggleExpandAll}
-                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  title={allExpanded ? 'Collapse every diff' : 'Open every file\'s diff'}
-                >
-                  {allExpanded ? 'Collapse all' : 'Expand all'}
-                </button>
-              )}
               {unstagedFiles.size > 0 && (
                 <button
                   onClick={() => {
@@ -286,7 +310,6 @@ export default function ChangesView({
                   {t('git:changes.stageAll')}
                 </button>
               )}
-              </span>
             </div>
             {unstagedFiles.size === 0 ? (
               <div className="px-3 py-2 text-xs italic text-muted-foreground">{t('git:changes.allStaged')}</div>

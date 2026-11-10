@@ -1,11 +1,13 @@
 import { AlertCircle, Check, ChevronDown, Download, GitBranch, Plus, RefreshCw, RotateCcw, Search, Upload, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfirmationRequest, GitRemoteStatus } from '@/shared/types';
 import NewBranchModal from '@/modules/git-panel/modals/NewBranchModal';
 
 type GitPanelHeaderProps = {
+  /** Kvn: shown before the branch (the repo picker in multi-repo folders), keeping it one row. */
+  leading?: ReactNode;
   isMobile: boolean;
   currentBranch: string;
   branches: string[];
@@ -32,6 +34,7 @@ type GitPanelHeaderProps = {
 
 /** Rendered by GitPanel to host the branch switcher and the fetch/pull/push/publish/revert actions. */
 export default function GitPanelHeader({
+  leading,
   isMobile,
   currentBranch,
   branches,
@@ -139,12 +142,14 @@ export default function GitPanelHeader({
   return (
     <>
       {/* Branch row + action buttons */}
-      <div className={`flex items-center justify-between border-b border-border/60 ${isMobile ? 'px-3 py-2' : 'px-4 py-3'}`}>
+      <div className={`flex items-center justify-between gap-2 border-b border-border/60 ${isMobile ? 'px-2 py-1' : 'px-3 py-1'}`}>
+        <div className="flex min-w-0 items-center gap-1">
+        {leading}
         {/* Branch selector */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative min-w-0" ref={dropdownRef}>
           <button
             onClick={() => setShowBranchDropdown((prev) => !prev)}
-            className={`flex items-center rounded-lg transition-colors hover:bg-accent ${isMobile ? 'space-x-1 px-2 py-1' : 'space-x-2 px-3 py-1.5'}`}
+            className={`flex items-center rounded-lg transition-colors hover:bg-accent ${isMobile ? 'space-x-1 px-2 py-1' : 'space-x-2 px-2 py-1'}`}
           >
             <GitBranch className={`text-muted-foreground ${isMobile ? 'h-3 w-3' : 'h-4 w-4'}`} />
             <span className="flex items-center gap-1">
@@ -229,6 +234,7 @@ export default function GitPanelHeader({
         </div>
 
         {/* Action buttons */}
+        </div>
         <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           {remoteStatus?.hasRemote && (
             <>

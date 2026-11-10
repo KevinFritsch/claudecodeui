@@ -91,7 +91,7 @@ export default function CommitComposer({
           </button>
         </div>
       ) : (
-        <div className="border-b border-border/60 px-4 py-3">
+        <div className="border-b border-border/60 px-3 py-2">
           {isMobile && (
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium text-foreground">{t('git:composer.title')}</span>
@@ -109,7 +109,7 @@ export default function CommitComposer({
             onChange={(event) => setCommitMessage(event.target.value)}
             placeholder={t('git:composer.placeholder')}
             className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
-            rows={3}
+            rows={commitMessage ? Math.min(6, Math.max(2, commitMessage.split('\n').length)) : 1}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                 event.preventDefault();
@@ -118,14 +118,14 @@ export default function CommitComposer({
             }}
           />
 
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
+          <div className="mt-1.5 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
               {t('git:composer.filesSelected', { count: selectedFileCount })}
             </span>
             <button
               onClick={requestCommitConfirmation}
               disabled={!commitMessage.trim() || selectedFileCount === 0 || isCommitting}
-              className="flex items-center space-x-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center space-x-1 rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Check className="h-3 w-3" />
               <span>{isCommitting ? t('git:composer.committing') : t('git:composer.commit')}</span>
