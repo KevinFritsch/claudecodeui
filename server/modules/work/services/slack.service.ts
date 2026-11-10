@@ -53,7 +53,7 @@ const OPEN_RECHECK_MS = 90_000;
 const CHANNEL_ANSWER_WINDOW_S = 3 * 3600;
 
 const stateCache = new Map<string, MentionState>();
-const userCache = new Map<string, { name: string; avatar: string | null }>();
+const userCache = new Map<string, { name: string; avatar: string | null; isBot: boolean }>();
 let myHandle: string | null = null;
 
 export class SlackClient {
@@ -90,21 +90,22 @@ export function client(secrets: WorkSecrets): SlackClient {
   return new SlackClient(secrets.SLACK_USER_TOKEN);
 }
 
-export async function userInfo(slack: SlackClient, id: string): Promise<{ name: string; avatar: string | null }> {
+export async function userInfo(slack: SlackClient, id: string): Promise<{ name: string; avatar: string | null; isBot: boolean }> {
   const cached = userCache.get(id);
   if (cached) return cached;
   try {
     type Profile = { display_name?: string; real_name?: string; image_72?: string; image_48?: string };
-    const data = await slack.call<{ user: { name: string; real_name?: string; profile?: Profile } }>('users.info', { user: id });
+    const data = await slack.call<{ user: { name: string; real_name?: string; is_bot?: boolean; profile?: Profile } }>('users.info', { user: id });
     const profile = data.user.profile ?? {};
     const info = {
       name: profile.display_name || profile.real_name || data.user.real_name || data.user.name,
       avatar: profile.image_72 || profile.image_48 || null,
+      isBot: Boolean(data.user.is_bot) || id === 'USLACKBOT',
     };
     userCache.set(id, info);
     return info;
   } catch {
-    return { name: id, avatar: null };
+    return { name: id, avatar: null, isBot: false };
   }
 }
 
@@ -200,23 +201,37 @@ export async function listOpenMentions(secrets: WorkSecrets, config: SlackProjec
   const since = new Date(Date.now() - (config.lookbackDays ?? 7) * 86_400_000).toISOString().slice(0, 10);
   const excluded = new Set((config.excludeChannels ?? []).map((c) => c.replace(/^#/, '').toLowerCase()));
 
-  const matches: SearchMatch[] = [];
-  for (let page = 1; page <= 3; page += 1) {
-    const data = await slack.call<{ messages: { matches: SearchMatch[]; paging?: { pages: number } } }>('search.messages', {
-      query: `<@${me}> after:${since}`,
-      sort: 'timestamp',
-      sort_dir: 'desc',
-      count: 100,
-      page,
-    });
-    matches.push(...data.messages.matches);
-    if ((data.messages.paging?.pages ?? 1) <= page) break;
-  }
+  // Messages that @-mention the user, plus direct and group DMs sent to them
+  // (a DM rarely tags its reader, so mentions alone missed them).
+  const search = async (query: string): Promise<SearchMatch[]> => {
+    const found: SearchMatch[] = [];
+    for (let page = 1; page <= 3; page += 1) {
+      const data = await slack.call<{ messages: { matches: SearchMatch[]; paging?: { pages: number } } }>('search.messages', {
+        query, sort: 'timestamp', sort_dir: 'desc', count: 100, page,
+      });
+      found.push(...data.messages.matches);
+      if ((data.messages.paging?.pages ?? 1) <= page) break;
+    }
+    return found;
+  };
+  const [mentions, toMe] = await Promise.all([search(`<@${me}> after:${since}`), search(`to:me after:${since}`)]);
+  const directs = toMe.filter((m) => m.channel.is_im || m.channel.is_mpim);
+  const seenIds = new Set<string>();
+  const matches = [...mentions, ...directs].filter((m) => {
+    const id = `${m.channel.id}:${m.ts}`;
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
 
-  const candidates = matches.filter((m) => (
-    m.user !== me
-    && !excluded.has((m.channel.name ?? '').toLowerCase())
-  ));
+  // Bots (Jira Cloud, webhooks…) are not people waiting on an answer when they DM.
+  const isBotAuthor = async (m: SearchMatch) => !m.user || (await userInfo(slack, m.user)).isBot;
+  const candidates: SearchMatch[] = [];
+  for (const m of matches) {
+    if (m.user === me || excluded.has((m.channel.name ?? '').toLowerCase())) continue;
+    if ((m.channel.is_im || m.channel.is_mpim) && !mentions.includes(m) && await isBotAuthor(m)) continue;
+    candidates.push(m);
+  }
 
   const results = await mapLimit(candidates, 6, async (match): Promise<SlackMention | null> => {
     const id = `${match.channel.id}:${match.ts}`;
