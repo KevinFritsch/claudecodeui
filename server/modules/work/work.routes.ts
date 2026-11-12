@@ -13,6 +13,7 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 import { transitionIssue } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
 import { autoLinkPullRequests } from './services/pr-autolink.service.js';
+import { assetsForLinks, type WorkAsset } from './services/session-assets.service.js';
 import { resolvedService } from './services/resolved.service.js';
 import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
@@ -108,9 +109,18 @@ router.get('/items', asyncHandler(async (req: Request, res: Response) => {
   } catch (error) {
     console.warn('[work] PR auto-link failed', (error as Error).message);
   }
+  const links = linksService.list(projectPath);
+  // Files the linked sessions produced (screenshots, PDFs, docs), shown on the item.
+  let assets: Record<string, WorkAsset[]> = {};
+  try {
+    assets = assetsForLinks(links);
+  } catch (error) {
+    console.warn('[work] session assets failed', (error as Error).message);
+  }
   res.json(createApiSuccessResponse({
     todos: config.todos ? todosService.list(projectPath) : null,
-    links: linksService.list(projectPath),
+    links,
+    assets,
     ...snapshot,
     slack,
     slackResolved: snapshot.slack ? snapshot.slack.items.filter((m) => resolvedSlack.has(m.id)) : [],

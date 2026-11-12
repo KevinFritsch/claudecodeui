@@ -1,11 +1,15 @@
 import { MessagesSquare, Play, Plus, X } from 'lucide-react';
 
 import { cn } from '@/shared/utils';
-import type { JiraTask, PullRequest, Todo, WorkLink } from '@/modules/work/api';
+import type { JiraTask, PullRequest, Todo, WorkAsset, WorkLink } from '@/modules/work/api';
 
 /** What a row needs to show and start its linked sessions. */
 export type SessionActions = {
   linksFor: (itemType: WorkLink['itemType'], itemKey: string) => WorkLink[];
+  /** Kvn: files the item's linked sessions produced (screenshots, docs). */
+  assetsFor: (itemType: WorkLink['itemType'], itemKey: string) => WorkAsset[];
+  /** DB project id, for reading those files through the authenticated content route. */
+  projectId: string;
   start: (item: SessionSeed) => void;
   open: (sessionId: string) => void;
   unlink: (link: WorkLink) => void;

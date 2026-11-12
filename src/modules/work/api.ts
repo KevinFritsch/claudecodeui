@@ -87,6 +87,16 @@ export type WorkLink = {
   createdAt: string;
 };
 
+/** Kvn: a file a linked session produced or showed (screenshot, PDF, doc it wrote…). */
+export type WorkAsset = {
+  path: string;
+  name: string;
+  kind: 'image' | 'video' | 'pdf' | 'sheet' | 'doc' | 'archive' | 'text';
+  size: number;
+  modified: string;
+  sessionId: string;
+};
+
 export type SessionLinkView = {
   itemType: WorkLink['itemType'];
   itemKey: string;
@@ -102,6 +112,8 @@ export type SourceResult<T> = { items: T; error: string | null; fetchedAt: strin
 export type WorkItems = {
   todos: Todo[] | null;
   links: WorkLink[];
+  /** "jira:GOL-3590" → files its linked sessions produced, newest first. */
+  assets?: Record<string, WorkAsset[]>;
   jira: SourceResult<JiraTask[]> | null;
   pullRequests: SourceResult<PullRequest[]> | null;
   slack: SourceResult<SlackMention[]> | null;

@@ -23,6 +23,7 @@ import { writeDraftText } from '@/shared/chatDrafts';
 import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, type WorkItems, type WorkLink } from '@/modules/work/api';
 import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
 import { SessionButton, jiraSeed, prSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
+import WorkAssets from '@/modules/work/WorkAssets';
 import SlackSection from '@/modules/work/SlackSection';
 import SlackCompose from '@/modules/work/SlackCompose';
 import { WORK_SEEN_EVENT } from '@/modules/work/useWorkBadge';
@@ -227,6 +228,7 @@ function TodoSection({ projectPath, todos, onChange, sessions }: { projectPath: 
               <span className="whitespace-pre-wrap break-words text-sm">{todo.text}</span>
               <div className="mt-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
                 <SessionButton seed={todoSeed(todo)} actions={sessions} />
+                <WorkAssets assets={sessions.assetsFor('todo', String(todo.id))} projectId={sessions.projectId} />
               </div>
             </div>
             <span className="shrink-0 pt-0.5 text-[11px] text-muted-foreground/70">{timeAgo(todo.createdAt)}</span>
@@ -369,6 +371,7 @@ function JiraTaskRow({
           );
         })}
       </div>
+      <WorkAssets assets={sessions.assetsFor('jira', task.key)} projectId={sessions.projectId} />
     </li>
   );
 }
@@ -597,6 +600,7 @@ function PullRequestRow({ pr, jiraUrlFor, sessions }: { pr: PullRequest; jiraUrl
       </div>
       <div className="ml-5 mt-1.5">
         <SessionButton seed={prSeed(pr)} actions={sessions} />
+        <WorkAssets assets={sessions.assetsFor('pr', `${pr.repo}#${pr.id}`)} projectId={sessions.projectId} />
       </div>
     </li>
   );
@@ -746,6 +750,8 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
     const links = items?.links ?? [];
     return {
       linksFor: (itemType, itemKey) => links.filter((l) => l.itemType === itemType && l.itemKey === itemKey),
+      assetsFor: (itemType, itemKey) => items?.assets?.[`${itemType}:${itemKey}`] ?? [],
+      projectId: project.projectId,
       open: onOpenSession,
       start: (seed) => {
         // Prefill the new chat's composer, remember which item it is for, then open a new chat.
@@ -766,7 +772,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
           .catch(() => void load());
       },
     };
-  }, [items?.links, load, onOpenSession, onStartNewSession, project.projectId, projectPath]);
+  }, [items?.assets, items?.links, load, onOpenSession, onStartNewSession, project.projectId, projectPath]);
 
   const jiraSite = tasks[0]?.url.replace(/\/browse\/.*$/, '') ?? null;
   const jiraUrlFor = useCallback((key: string) => {
