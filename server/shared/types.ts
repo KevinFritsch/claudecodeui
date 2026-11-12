@@ -1465,6 +1465,8 @@ export type FileTreeNode = {
   permissionsRwx: string;
   isSymlink?: boolean;
   children?: FileTreeNode[];
+  /** Kvn: a directory whose children were not loaded (tree too big); fetch them with `path`. */
+  lazy?: boolean;
 };
 
 /**
@@ -1608,7 +1610,7 @@ export type FileTreeServices = {
   }>;
   listProjectFiles(
     projectId: string,
-    options?: { respectGitignore: boolean },
+    options?: { respectGitignore: boolean; path?: string; depth?: number },
   ): Promise<FileTreeNode[]>;
   createEntry(input: {
     projectId: string;

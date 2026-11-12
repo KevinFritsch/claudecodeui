@@ -162,8 +162,11 @@ export function createFileTreeRouter(
   }, logger));
 
   router.get('/projects/:projectId/files', createRouteHandler(async (request, response) => {
+    const depth = typeof request.query.depth === 'string' ? Number.parseInt(request.query.depth, 10) : undefined;
     response.json(await services.listProjectFiles(readProjectId(request), {
       respectGitignore: request.query.respectGitignore === 'true',
+      ...(typeof request.query.path === 'string' && request.query.path ? { path: request.query.path } : {}),
+      ...(depth !== undefined && Number.isFinite(depth) ? { depth } : {}),
     }));
   }, logger));
 

@@ -9,11 +9,12 @@ import { useTranslation } from 'react-i18next';
 
 import { MermaidDiagram } from '@/modules/code-editor';
 import { MarkdownImage } from '@/modules/chat/transcript/MarkdownImage';
+import { FileRefLink } from '@/modules/chat/transcript/FileRefLink';
+import { looksLikeServerPath } from '@/modules/chat/utils/workspaceFiles';
 import { normalizeInlineCodeFences } from '@/modules/chat/utils/chatFormatting';
 import { normalizeLatexDelimiters } from '@/modules/chat/utils/latexDelimiters';
 import { copyTextToClipboard } from '@/shared/utils';
 import { SyntaxHighlighter } from '@/shared/syntaxHighlighter';
-import { usePaletteOps } from '@/modules/command-palette';
 import { buildSyntaxTheme } from '@/modules/chat/utils/syntaxHighlightTheme';
 import type { PrismStyleSheet } from '@/modules/chat/utils/syntaxHighlightTheme';
 
@@ -28,14 +29,6 @@ type MarkdownProps = {
 // everything else is treated as a workspace file reference.
 const isExternalHref = (href?: string): boolean =>
   !!href && (/^(https?:|mailto:|tel:|data:)/i.test(href) || href.startsWith('#'));
-
-// Read the trailing `:line` / `:line:col` suffix so the editor can reveal it.
-// Both this and stripLineSuffix are anchored at the end, so callers pass an
-// already-trimmed reference.
-const lineFromRef = (value: string): number | null => {
-  const match = value.match(/:(\d+)(?::\d+)?$/);
-  return match ? Number(match[1]) : null;
-};
 
 // Strip a trailing `:line` / `:line:col` suffix (e.g. `src/foo.ts:130`).
 const stripLineSuffix = (value: string): string => value.replace(/:\d+(?::\d+)?$/, '');
@@ -110,6 +103,11 @@ const CodeBlock = ({ node: _node, className, children, forceBlock, ...props }: C
   // react-markdown v9+ dropped the `inline` prop: block code is whatever the
   // `pre` renderer hands us (forceBlock). Multiline is kept as a safety net.
   const shouldInline = !forceBlock && !/[\r\n]/.test(raw);
+
+  // Kvn: `~/server/setup/README.md` style paths become openable/downloadable.
+  if (shouldInline && looksLikeServerPath(raw)) {
+    return <FileRefLink reference={raw} variant="code">{raw}</FileRefLink>;
+  }
 
   if (shouldInline) {
     return (
@@ -301,7 +299,6 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
     [breaks, hasMath],
   );
   const rehypePlugins = useMemo(() => (hasMath ? [rehypeKatex] : EMPTY_PLUGINS), [hasMath]);
-  const { openFileInEditor, openDirectory } = usePaletteOps();
 
   const components = useMemo(
     () => ({
@@ -316,31 +313,16 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
           : looksLikeFilePath(linkText) ? linkText : undefined;
 
         if (fileRef && !isExternalHref(href)) {
+          // Strip `:line` before decoding so an encoded colon in a filename is not a
+          // line suffix; link text is literal and is not URL-decoded.
+          const reference = fileRef.trim();
+          const lineMatch = reference.match(/:(\d+)(?::\d+)?$/);
+          const rawPath = stripLineSuffix(reference);
+          const filePath = href === fileRef ? decodeFileHref(rawPath) : rawPath;
           return (
-            <a
-              href={href || fileRef}
-              className="cursor-pointer text-blue-600 hover:underline dark:text-blue-400"
-              onClick={(event) => {
-                event.preventDefault();
-                // Normalized once for every branch below: the href arrives
-                // trimmed from the parser, but the link-text fallback keeps a
-                // trailing space (``[`src/foo.ts:12` ]()``), and that space
-                // defeats the `$`-anchored suffix strip.
-                const reference = fileRef.trim();
-                // Strip line metadata before decoding so an encoded colon in
-                // a filename is not mistaken for a line suffix. Link text is
-                // already literal text and must not be URL-decoded.
-                const path = stripLineSuffix(reference);
-                const filePath = href === fileRef ? decodeFileHref(path) : path;
-                if (filePath.endsWith('/')) {
-                  openDirectory(filePath);
-                  return;
-                }
-                openFileInEditor(filePath, lineFromRef(reference));
-              }}
-            >
+            <FileRefLink path={filePath} line={lineMatch ? Number(lineMatch[1]) : null}>
               {linkChildren}
-            </a>
+            </FileRefLink>
           );
         }
 
@@ -356,7 +338,7 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
         );
       },
     }),
-    [openFileInEditor, openDirectory],
+    [],
   );
 
   return (

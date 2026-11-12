@@ -304,6 +304,9 @@ export function createFileTreeService(dependencies: FileTreeServiceDependencies)
           includeEntry,
           remainingEntries,
         );
+      } else if (entry.isDirectory() && !isForbiddenSystemDir && !item.isSymlink) {
+        // Kvn: not walked (depth limit); the browser loads it when expanded.
+        item.lazy = true;
       }
 
       return item;
@@ -355,7 +358,9 @@ export function createFileTreeService(dependencies: FileTreeServiceDependencies)
    * endpoints keep using `resolvePathInsideProject` alone, so nothing outside
    * the project can be changed.
    */
-  async function resolveReadablePath(projectRoot: string, targetPath: string): Promise<string> {
+  async function resolveReadablePath(projectRoot: string, rawTargetPath: string): Promise<string> {
+    // Kvn: chat replies often name files as `~/…`; read them relative to the workspace root (home).
+    const targetPath = expandWorkspacePath(dependencies.workspace.rootPath, rawTargetPath);
     if (path.isAbsolute(targetPath)) {
       const readOnlyPath = await dependencies.workspace.resolveReadOnlyRootPath(targetPath);
       if (readOnlyPath) {
@@ -527,7 +532,26 @@ export function createFileTreeService(dependencies: FileTreeServiceDependencies)
         }
       }
 
-      return buildFileTree(projectRoot, 10, 0, includeEntry);
+      // Kvn: one folder on demand (lazy trees), e.g. when a `lazy` directory is expanded.
+      if (options?.path) {
+        const directoryPath = path.resolve(options.path) === path.resolve(projectRoot)
+          ? projectRoot
+          : resolvePathInsideProject(projectRoot, options.path);
+        const depth = Math.max(0, Math.min(Number.isFinite(options.depth) ? Number(options.depth) : 0, 3));
+        return buildFileTree(directoryPath, depth, 0, includeEntry);
+      }
+
+      // Kvn: a big workspace (many repos and worktrees) used to fail outright.
+      // Fall back to fewer levels; deeper folders come back marked `lazy`.
+      for (const depth of [10, 3, 2, 1, 0]) {
+        try {
+          return await buildFileTree(projectRoot, depth, 0, includeEntry);
+        } catch (error) {
+          const tooLarge = error instanceof AppError && (error as AppError & { code?: string }).code === 'FILE_TREE_TOO_LARGE';
+          if (!tooLarge || depth === 0) throw error;
+        }
+      }
+      return [];
     },
 
     async createEntry(input) {

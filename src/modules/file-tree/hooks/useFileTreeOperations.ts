@@ -285,19 +285,23 @@ export function useFileTreeOperations({
         // Store raw bytes in the archive so binary files stay intact.
         const fileBytes = await response.arrayBuffer();
         zip.file(fullPath, fileBytes);
-      } else if (node.type === 'directory' && node.children) {
-        // Recursively process children
-        for (const child of node.children) {
+      } else if (node.type === 'directory') {
+        for (const child of await childrenOf(node)) {
           await collectFiles(child, fullPath);
         }
       }
     };
 
-    // If the folder has children, process them
-    if (folder.children && folder.children.length > 0) {
-      for (const child of folder.children) {
-        await collectFiles(child, '');
-      }
+    // Kvn: in big workspaces folders arrive unloaded (`lazy`); fetch them for the zip.
+    const childrenOf = async (node: FileTreeNode): Promise<FileTreeNode[]> => {
+      if (node.children && !node.lazy) return node.children;
+      const response = await api.getFiles(selectedProject.projectId, { path: node.path, depth: 3 });
+      if (!response.ok) throw new Error(`Failed to list "${node.name}" for ZIP export`);
+      return (await response.json()) as FileTreeNode[];
+    };
+
+    for (const child of await childrenOf(folder)) {
+      await collectFiles(child, '');
     }
 
     // Generate ZIP file

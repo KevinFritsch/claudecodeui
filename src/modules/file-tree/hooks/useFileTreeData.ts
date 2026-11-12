@@ -8,7 +8,19 @@ type UseFileTreeDataResult = {
   loading: boolean;
   error: string | null;
   refreshFiles: () => void;
+  /** Kvn: loads a `lazy` directory's children (big workspaces load folder by folder). */
+  loadDirectory: (path: string) => Promise<void>;
 };
+
+function replaceChildren(nodes: FileTreeNode[], targetPath: string, children: FileTreeNode[]): FileTreeNode[] {
+  return nodes.map((node) => {
+    if (node.path === targetPath) return { ...node, children, lazy: false };
+    if (node.children && targetPath.startsWith(`${node.path}/`)) {
+      return { ...node, children: replaceChildren(node.children, targetPath, children) };
+    }
+    return node;
+  });
+}
 
 const DEFAULT_LOAD_ERROR = 'Unable to load the file tree for this project.';
 
@@ -106,10 +118,24 @@ export function useFileTreeData(selectedProject: Project | null): UseFileTreeDat
     };
   }, [selectedProject?.projectId, refreshKey]);
 
+  const loadDirectory = useCallback(async (path: string) => {
+    const projectId = selectedProject?.projectId;
+    if (!projectId) return;
+    try {
+      const response = await api.getFiles(projectId, { path, depth: 1 });
+      if (!response.ok) return;
+      const children = (await response.json()) as FileTreeNode[];
+      setFiles((current) => replaceChildren(current, path, children));
+    } catch (error) {
+      console.error('Error loading folder:', error);
+    }
+  }, [selectedProject?.projectId]);
+
   return {
     files,
     loading,
     error,
     refreshFiles,
+    loadDirectory,
   };
 }
