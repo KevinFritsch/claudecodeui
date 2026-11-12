@@ -293,11 +293,12 @@ test('listProjectFiles abandons a directory stream as soon as the entry limit is
       && error.code === 'FILE_TREE_TOO_LARGE'
       && error.statusCode === 413,
   );
-  // The budget plus the single entry that proves it was exceeded.
-  assert.equal(streamedEntries, 10_001);
+  // Kvn: the full walk, then a top-level-only probe (a shallower tree cannot help when
+  // the top folder alone is over the limit). Each stops one entry past the budget.
+  assert.equal(streamedEntries, 2 * 10_001);
 });
 
-test('listProjectFiles shares the entry limit across nested directories', async () => {
+test('listProjectFiles falls back to a shallower, lazy tree when nested directories exceed the limit', async () => {
   const projectRoot = path.resolve('file-tree-test-project');
   const firstDirectory = path.join(projectRoot, 'first');
   const secondDirectory = path.join(projectRoot, 'second');
@@ -323,12 +324,17 @@ test('listProjectFiles shares the entry limit across nested directories', async 
   });
   const service = createFileTreeService(createDependencies(fileSystem, projectRoot));
 
-  await assert.rejects(
-    service.listProjectFiles('project-1'),
-    (error: unknown) => error instanceof AppError
-      && error.code === 'FILE_TREE_TOO_LARGE'
-      && error.statusCode === 413,
-  );
+  // 2 x 5,000 nested entries share the 10,000 budget, so the full tree is refused;
+  // the top level comes back with both folders marked lazy (loaded when opened).
+  const tree = await service.listProjectFiles('project-1');
+  assert.deepEqual(tree.map((node) => [node.name, node.lazy === true, node.children]), [
+    ['first', true, undefined],
+    ['second', true, undefined],
+  ]);
+
+  // Opening one folder lists just that folder.
+  const first = await service.listProjectFiles('project-1', { respectGitignore: false, path: firstDirectory, depth: 0 });
+  assert.equal(first.length, 5_000);
 });
 
 test('readTextFile rejects traversal before invoking the filesystem adapter', async () => {

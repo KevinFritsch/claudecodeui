@@ -543,15 +543,22 @@ export function createFileTreeService(dependencies: FileTreeServiceDependencies)
 
       // Kvn: a big workspace (many repos and worktrees) used to fail outright.
       // Fall back to fewer levels; deeper folders come back marked `lazy`.
-      for (const depth of [10, 3, 2, 1, 0]) {
+      const isTooLarge = (error: unknown) => error instanceof AppError && error.code === 'FILE_TREE_TOO_LARGE';
+      try {
+        return await buildFileTree(projectRoot, 10, 0, includeEntry);
+      } catch (error) {
+        if (!isTooLarge(error)) throw error;
+      }
+      // If the top folder alone is over the limit, no shallower tree helps: fail now.
+      const topLevelOnly = await buildFileTree(projectRoot, 0, 0, includeEntry);
+      for (const depth of [3, 2, 1]) {
         try {
           return await buildFileTree(projectRoot, depth, 0, includeEntry);
         } catch (error) {
-          const tooLarge = error instanceof AppError && (error as AppError & { code?: string }).code === 'FILE_TREE_TOO_LARGE';
-          if (!tooLarge || depth === 0) throw error;
+          if (!isTooLarge(error)) throw error;
         }
       }
-      return [];
+      return topLevelOnly;
     },
 
     async createEntry(input) {
