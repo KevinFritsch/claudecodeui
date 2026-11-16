@@ -375,11 +375,20 @@ export default function SlackSection({
     }
   };
 
+  // Kvn: everything resolved at once can be brought back in one click for a few seconds.
+  const [bulkResolved, setBulkResolved] = useState<{ items: SlackMention[]; at: number } | null>(null);
   const resolveAll = async () => {
+    const items = mentions;
     setBulkBusy(true);
-    await setResolved(mentions, true);
+    await setResolved(items, true);
     setBulkBusy(false);
+    setBulkResolved({ items, at: Date.now() });
   };
+  useEffect(() => {
+    if (!bulkResolved) return undefined;
+    const timer = window.setTimeout(() => setBulkResolved(null), UNDO_WINDOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [bulkResolved]);
 
   useEffect(() => {
     if (closed.length === 0) return undefined;
@@ -422,18 +431,38 @@ export default function SlackSection({
           Slack · needs you
           <span className="ml-1 font-normal normal-case text-muted-foreground/70">· {mentions.length}</span>
         </h3>
-        {mentions.length > 1 && (
+        {mentions.length > 0 && (
           <button
             type="button"
             onClick={() => void resolveAll()}
             disabled={bulkBusy}
-            title="Hide all of these here. Nothing is sent or added in Slack."
-            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+            title="Move all of these to Resolved, here only. Nothing is sent or added in Slack."
+            className="ml-auto inline-flex h-6 items-center gap-1 rounded border border-border/70 px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
-            {bulkBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />} Resolve all
+            {bulkBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
+            Resolve all{mentions.length > 1 ? ` (${mentions.length})` : ''}
           </button>
         )}
       </div>
+      {bulkResolved && (
+        <div className="mb-2 flex items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
+          <Check className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            Resolved {bulkResolved.items.length} message{bulkResolved.items.length > 1 ? 's' : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const { items } = bulkResolved;
+              setBulkResolved(null);
+              void setResolved(items, false);
+            }}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-emerald-500/20"
+          >
+            <Undo2 className="h-3 w-3" /> Undo
+          </button>
+        </div>
+      )}
       {error && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
           <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
