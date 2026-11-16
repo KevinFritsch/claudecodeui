@@ -9,6 +9,14 @@ import { SessionButton, clip, type SessionActions, type SessionSeed } from '@/mo
 const SEND_DELAY_MS = 5_000;
 const UNDO_WINDOW_MS = 8_000;
 
+function clockTime(ts: string): string {
+  const date = new Date(Number(ts) * 1000);
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return date.toDateString() === new Date().toDateString()
+    ? time
+    : `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
 function slackTimeAgo(ts: string): string {
   const seconds = Math.max(0, Math.round(Date.now() / 1000 - Number(ts)));
   if (seconds < 60) return 'just now';
@@ -146,6 +154,13 @@ function ConversationRow({
   const replyWhere = replyThreadTs ? 'in the thread' : 'in the conversation';
   const hidden = showAll ? 0 : Math.max(0, messages.length - COLLAPSED_COUNT);
   const visible = messages.slice(hidden);
+  // Consecutive messages from the same person form one turn.
+  const runs: SlackMention[][] = [];
+  for (const message of visible) {
+    const last = runs[runs.length - 1];
+    if (last && (last[0].authorId ?? last[0].author) === (message.authorId ?? message.author)) last.push(message);
+    else runs.push([message]);
+  }
 
   useEffect(() => {
     if (replying) textareaRef.current?.focus();
@@ -237,18 +252,7 @@ function ConversationRow({
 
   return (
     <li className="group flex gap-2.5 px-1 py-2.5">
-      {/* Up to three faces, stacked, for the people in the conversation. */}
-      <div className="relative h-8 w-8 shrink-0">
-        {authors.slice(0, 3).reverse().map((author, index, list) => (
-          <div
-            key={author.authorId ?? author.author}
-            className={cn('absolute rounded-md ring-2 ring-background', list.length > 1 ? 'h-6 w-6' : 'h-8 w-8')}
-            style={{ left: (list.length - 1 - index) * 5, top: (list.length - 1 - index) * 5 }}
-          >
-            <Avatar mention={author} size={list.length > 1 ? 'h-6 w-6' : 'h-8 w-8'} />
-          </div>
-        ))}
-      </div>
+      {messages.length === 1 && <Avatar mention={latest} />}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" title="New since you last looked" />}
@@ -275,22 +279,31 @@ function ConversationRow({
             Show {hidden} earlier message{hidden > 1 ? 's' : ''}
           </button>
         )}
-        <ul className="mt-1 space-y-0.5">
-          {visible.map((message, index) => {
-            const previous = index > 0 ? visible[index - 1] : hidden > 0 ? messages[hidden - 1] : null;
-            const sameAuthor = previous && (previous.authorId ?? previous.author) === (message.authorId ?? message.author);
-            return (
-              <li key={message.id} className="text-sm" title={new Date(Number(message.ts) * 1000).toLocaleString()}>
-                {messages.length > 1 && !sameAuthor && (
-                  <span className="mr-1.5 text-xs font-semibold text-foreground/80">{message.author}</span>
-                )}
-                <span className="whitespace-pre-wrap break-words">
-                  {message.text || <span className="italic text-muted-foreground">No text (attachment or bot card)</span>}
-                </span>
+        {messages.length === 1 ? (
+          <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            {latest.text || <span className="italic text-muted-foreground">No text (attachment or bot card), open it in Slack.</span>}
+          </p>
+        ) : (
+          // Slack-style: each speaker's turn has their face, name and time, then their messages.
+          <ul className="mt-1.5 space-y-2">
+            {runs.map((run) => (
+              <li key={run[0].id} className="flex gap-2">
+                <Avatar mention={run[0]} size="h-7 w-7" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-[13px] font-semibold text-foreground">{run[0].author}</span>
+                    <span className="text-[10px] text-muted-foreground">{clockTime(run[0].ts)}</span>
+                  </div>
+                  {run.map((message) => (
+                    <p key={message.id} className="whitespace-pre-wrap break-words text-sm leading-snug">
+                      {message.text || <span className="italic text-muted-foreground">No text (attachment or bot card)</span>}
+                    </p>
+                  ))}
+                </div>
               </li>
-            );
-          })}
-        </ul>
+            ))}
+          </ul>
+        )}
 
         {replying && (
           <div className="mt-2 rounded-md border border-border/70 bg-background focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30">
