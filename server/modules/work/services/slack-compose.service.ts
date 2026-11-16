@@ -216,16 +216,33 @@ function connectorCall(tool: 'slack_send_message' | 'slack_send_message_draft', 
   });
 }
 
+/** The existing DM conversation (D…) with a user, found through search (the token has no im:read). */
+async function findDirectChannel(secrets: WorkSecrets, userId: string): Promise<string | null> {
+  try {
+    const data = await client(secrets).call<{ messages: { matches: Array<{ channel: { id: string; is_im?: boolean } }> } }>(
+      'search.messages',
+      { query: `in:<@${userId}>`, count: 5, sort: 'timestamp' },
+    );
+    return data.messages.matches.find((m) => m.channel.is_im)?.channel.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function deliverMessage(
   secrets: WorkSecrets,
   options: { mode: 'draft' | 'send'; target: ComposeTarget; threadTs: string | null; text: string },
 ): Promise<{ via: 'api' | 'connector' }> {
   const { target, threadTs, text } = options;
-  // A conversation id (C… channel, G… private, D… existing DM) can be posted to
-  // with the user's token; only a bare user id (new DM) needs the connector.
-  if (options.mode === 'send' && !target.id.startsWith('U')) {
-    await client(secrets).call('chat.postMessage', { channel: target.id, text, ...(threadTs ? { thread_ts: threadTs } : {}) }, true);
-    return { via: 'api' };
+  if (options.mode === 'send') {
+    // Posting with the user's own token looks like any message they typed. The
+    // connector appends a visible "Sent using Claude" line, so it is the last resort:
+    // only for a person the user has never exchanged a DM with (the token cannot open DMs).
+    const channel = target.id.startsWith('U') ? await findDirectChannel(secrets, target.id) : target.id;
+    if (channel) {
+      await client(secrets).call('chat.postMessage', { channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) }, true);
+      return { via: 'api' };
+    }
   }
   const args: Record<string, string> = { channel_id: target.id, message: text };
   if (threadTs) args.thread_ts = threadTs;

@@ -63,8 +63,11 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
     setBusy(mode);
     setError(null);
     try {
-      await workApi.composeDeliver(projectPath, { mode, target: recipient, threadTs: thread?.ts ?? null, text });
-      setStage({ kind: 'done', message: mode === 'draft' ? `Draft saved in Slack (${destinationLabel})` : `Sent: ${destinationLabel}` });
+      const { via } = await workApi.composeDeliver(projectPath, { mode, target: recipient, threadTs: thread?.ts ?? null, text });
+      const sent = via === 'connector'
+        ? `Sent: ${destinationLabel} (first DM with them, so Slack shows "Sent using Claude")`
+        : `Sent: ${destinationLabel}`;
+      setStage({ kind: 'done', message: mode === 'draft' ? `Draft saved in Slack (${destinationLabel})` : sent });
       setInstruction('');
     } catch (e) {
       setError((e as Error).message);
