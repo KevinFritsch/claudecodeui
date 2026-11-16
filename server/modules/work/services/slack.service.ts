@@ -237,7 +237,8 @@ export async function listOpenMentions(secrets: WorkSecrets, config: SlackProjec
   const isBotAuthor = async (m: SearchMatch) => !m.user || (await userInfo(slack, m.user)).isBot;
   const candidates: SearchMatch[] = [];
   for (const m of matches) {
-    if (m.user === me || excluded.has((m.channel.name ?? '').toLowerCase())) continue;
+    // excludeChannels takes channel names or ids (a group DM has no stable name, so use its id).
+    if (m.user === me || excluded.has((m.channel.name ?? '').toLowerCase()) || excluded.has(m.channel.id.toLowerCase())) continue;
     if ((m.channel.is_im || m.channel.is_mpim) && !mentions.includes(m) && await isBotAuthor(m)) continue;
     candidates.push(m);
   }
