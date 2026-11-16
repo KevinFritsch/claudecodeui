@@ -1,5 +1,5 @@
 import { AlertTriangle, Sparkles, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, Eye, Hash, Loader2, Lock, MessageCircle, Reply, Send, SmilePlus, Undo2, Users, X } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { cn } from '@/shared/utils';
 import { workApi, type SlackMention } from '@/modules/work/api';
@@ -19,20 +19,63 @@ function slackTimeAgo(ts: string): string {
   return `${Math.round(hours / 24)}d`;
 }
 
-function slackSeed(mention: SlackMention): SessionSeed {
-  const where = mention.channelKind === 'dm' ? 'a DM' : `#${mention.channelName}`;
-  const quoted = (mention.text || '(no text, open the link)').split('\n').map((line) => `> ${line}`).join('\n');
+/** Kvn: messages that belong together: a thread, or a burst in one DM/group/channel. */
+type Conversation = {
+  key: string;
+  messages: SlackMention[];
+  latest: SlackMention;
+  /** Replies posted inside a Slack thread (answer there). */
+  isThread: boolean;
+};
+
+const BURST_GAP_S = 2 * 3600;
+
+export function groupConversations(mentions: SlackMention[]): Conversation[] {
+  // A message that opened a thread joins its replies' card.
+  const threadRoots = new Set(mentions.filter((m) => m.threadTs !== m.ts).map((m) => `${m.channelId}:${m.threadTs}`));
+  const sorted = [...mentions].sort((a, b) => Number(a.ts) - Number(b.ts));
+  const groups: Conversation[] = [];
+  const current = new Map<string, Conversation>();
+  for (const message of sorted) {
+    const isThread = message.threadTs !== message.ts || threadRoots.has(`${message.channelId}:${message.ts}`);
+    const base = isThread ? `thread:${message.channelId}:${message.threadTs}` : `conv:${message.channelId}`;
+    let group = current.get(base);
+    if (group && !isThread && Number(message.ts) - Number(group.latest.ts) > BURST_GAP_S) group = undefined;
+    if (!group) {
+      group = { key: `${base}:${message.ts}`, messages: [], latest: message, isThread };
+      current.set(base, group);
+      groups.push(group);
+    }
+    group.messages.push(message);
+    group.latest = message;
+  }
+  return groups.sort((a, b) => Number(b.latest.ts) - Number(a.latest.ts));
+}
+
+function authorsOf(conversation: Conversation): SlackMention[] {
+  const seen = new Map<string, SlackMention>();
+  for (const message of conversation.messages) seen.set(message.authorId ?? message.author, message);
+  return [...seen.values()];
+}
+
+function conversationSeed(conversation: Conversation): SessionSeed {
+  const { latest, messages } = conversation;
+  const where = latest.channelKind === 'dm' ? 'a DM' : `#${latest.channelName}`;
+  const names = authorsOf(conversation).map((m) => m.author).join(', ');
+  const quoted = messages
+    .map((m) => `> ${m.author}: ${(m.text || '(no text, open the link)').split('\n').join('\n> ')}`)
+    .join('\n');
   return {
     itemType: 'slack',
-    itemKey: mention.id,
-    sessionName: clip(`slack: ${mention.author} ${mention.text}`, 80),
+    itemKey: latest.id,
+    sessionName: clip(`slack: ${names} ${latest.text}`, 80),
     prompt: [
-      `slack: ${mention.author} in ${where}`,
-      mention.permalink,
+      `slack: ${names} in ${where}${conversation.isThread ? ' (thread)' : ''}`,
+      latest.permalink,
       '',
       quoted,
       '',
-      'Read the whole thread first (Slack connector), then handle this request. When done, draft my reply in the thread (golfn:slack-voice) for me to approve; do not send it.',
+      'Read the whole conversation first (Slack connector), then handle this request. When done, draft my reply (golfn:slack-voice) for me to approve; do not send it.',
       '',
     ].join('\n'),
   };
@@ -59,30 +102,34 @@ function ChannelIcon({ kind }: { kind: SlackMention['channelKind'] }) {
 }
 
 type Reaction = { name: string; char: string | null };
-type Closed = { mention: SlackMention; how: 'done' | 'replied' | 'resolved'; at: number; reaction?: Reaction };
+type Closed = { conversation: Conversation; how: 'done' | 'replied' | 'resolved'; at: number; reaction?: Reaction };
 
 /** 👀 means "on it": it marks the message without closing it. */
 const OPEN_REACTIONS = new Set(['eyes']);
 
-function MentionRow({
-  mention,
+const COLLAPSED_COUNT = 4;
+
+function ConversationRow({
+  conversation,
   projectPath,
   sessions,
   onClosed,
   onReacted,
   isNew,
 }: {
-  mention: SlackMention;
+  conversation: Conversation;
   isNew: boolean;
   projectPath: string;
   sessions: SessionActions;
-  onClosed: (mention: SlackMention, how: Closed['how'], reaction?: Reaction) => void;
-  onReacted: (mention: SlackMention) => void;
+  onClosed: (conversation: Conversation, how: Closed['how'], reaction?: Reaction) => void;
+  onReacted: (message: SlackMention) => void;
 }) {
+  const { latest, messages, isThread } = conversation;
+  const otherIds = messages.filter((m) => m.id !== latest.id).map((m) => m.id);
+  const authors = authorsOf(conversation);
+  const [showAll, setShowAll] = useState(false);
   const [resolving, setResolving] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const [replying, setReplying] = useState(false);
-  // In AI mode the box takes an instruction ("explain why we did that") and Claude drafts the reply into it.
   const [aiMode, setAiMode] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [draft, setDraft] = useState('');
@@ -93,13 +140,17 @@ function MentionRow({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [reactButton, setReactButton] = useState<HTMLButtonElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isLong = mention.text.length > 220 || mention.text.split('\n').length > 3;
+
+  // DMs and group DMs are answered in the conversation; channels and threads in the thread.
+  const replyThreadTs = isThread ? latest.threadTs : (latest.channelKind === 'dm' || latest.channelKind === 'group') ? '' : latest.ts;
+  const replyWhere = replyThreadTs ? 'in the thread' : 'in the conversation';
+  const hidden = showAll ? 0 : Math.max(0, messages.length - COLLAPSED_COUNT);
+  const visible = messages.slice(hidden);
 
   useEffect(() => {
     if (replying) textareaRef.current?.focus();
   }, [replying]);
 
-  // The reply goes out after a short countdown, so a typo can still be pulled back.
   useEffect(() => {
     if (sendAt === null) return undefined;
     const timer = window.setInterval(() => {
@@ -108,8 +159,8 @@ function MentionRow({
         window.clearInterval(timer);
         setSendAt(null);
         setBusy('send');
-        workApi.slackReply(projectPath, mention.id, mention.threadTs, draft.trim())
-          .then(() => onClosed(mention, 'replied'))
+        workApi.slackReply(projectPath, latest.id, replyThreadTs, draft.trim(), otherIds)
+          .then(() => onClosed(conversation, 'replied'))
           .catch((e: Error) => {
             setError(e.message);
             setBusy(null);
@@ -117,36 +168,35 @@ function MentionRow({
       }
     }, 250);
     return () => window.clearInterval(timer);
-  }, [draft, mention, onClosed, projectPath, sendAt]);
+  }, [conversation, draft, latest.id, onClosed, otherIds, projectPath, replyThreadTs, sendAt]);
 
-  // Any reaction answers the message (and closes it here), except 👀.
+  // Any reaction (on the newest message) answers the whole conversation, except 👀.
   const react = async (name: string, char: string | null) => {
     setPickerOpen(false);
-    if (OPEN_REACTIONS.has(name) && mention.myReactions.includes(name)) return;
+    if (OPEN_REACTIONS.has(name) && latest.myReactions.includes(name)) return;
     setBusy('done');
     setError(null);
     try {
-      await workApi.slackDone(projectPath, mention.id, true, name);
+      await workApi.slackDone(projectPath, latest.id, true, name, OPEN_REACTIONS.has(name) ? [] : otherIds);
       recordEmojiUse(name, char);
       if (OPEN_REACTIONS.has(name)) {
-        onReacted({ ...mention, myReactions: [...mention.myReactions, name] });
+        onReacted({ ...latest, myReactions: [...latest.myReactions, name] });
         setBusy(null);
       } else {
-        onClosed(mention, 'done', { name, char });
+        onClosed(conversation, 'done', { name, char });
       }
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
     }
   };
-  const markDone = () => react('white_check_mark', '✅');
 
   const resolve = async () => {
     setResolving(true);
     setError(null);
     try {
-      await workApi.resolve(projectPath, 'slack', [mention.id], true);
-      onClosed(mention, 'resolved');
+      await workApi.resolve(projectPath, 'slack', messages.map((m) => m.id), true);
+      onClosed(conversation, 'resolved');
     } catch (e) {
       setError((e as Error).message);
       setResolving(false);
@@ -157,7 +207,8 @@ function MentionRow({
     setDrafting(true);
     setError(null);
     try {
-      const { text } = await workApi.slackAiReply(projectPath, mention.id, mention.threadTs, mention.author, draft);
+      const context = isThread ? undefined : messages.map((m) => `${m.author}: ${m.text}`);
+      const { text } = await workApi.slackAiReply(projectPath, latest.id, latest.threadTs, latest.author, draft, context);
       setDraft(text);
       setAiMode(false);
       window.setTimeout(() => textareaRef.current?.focus(), 0);
@@ -166,12 +217,6 @@ function MentionRow({
     } finally {
       setDrafting(false);
     }
-  };
-
-  const openAi = () => {
-    setReplying(true);
-    setAiMode(true);
-    setDraft('');
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -192,146 +237,178 @@ function MentionRow({
 
   return (
     <li className="group flex gap-2.5 px-1 py-2.5">
-      <Avatar mention={mention} />
-      <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        {isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" title="New since you last looked" />}
-        <span className="font-semibold text-foreground">{mention.author}</span>
-        <span className="inline-flex min-w-0 items-center gap-0.5">
-          <ChannelIcon kind={mention.channelKind} />
-          <span className="truncate">{mention.channelName}</span>
-        </span>
-        <span>· {slackTimeAgo(mention.ts)}</span>
-        {mention.replyCount > 0 && <span>· {mention.replyCount} repl{mention.replyCount > 1 ? 'ies' : 'y'}</span>}
-        {mention.myReactions.includes('eyes') && (
-          <span className="inline-flex items-center gap-0.5 rounded bg-sky-500/15 px-1 text-sky-700 dark:text-sky-300" title="You reacted 👀">
-            <Eye className="h-3 w-3" /> on it
-          </span>
-        )}
-        <a href={mention.permalink} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-0.5 hover:text-primary" title="Open in Slack">
-          <ExternalLink className="h-3 w-3" />
-        </a>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => isLong && setExpanded((v) => !v)}
-        className={cn('mt-1 block w-full whitespace-pre-wrap break-words text-left text-sm', !expanded && isLong && 'line-clamp-3', !isLong && 'cursor-text')}
-      >
-        {mention.text || <span className="italic text-muted-foreground">No text (attachment or bot card), open it in Slack.</span>}
-      </button>
-
-      {replying && (
-        <div className="mt-2 rounded-md border border-border/70 bg-background focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30">
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            disabled={sendAt !== null || busy === 'send' || drafting}
-            rows={Math.min(8, Math.max(2, draft.split('\n').length))}
-            placeholder={aiMode
-              ? 'What should the reply say? e.g. "explain why we kept it cash-only" (Enter to draft; empty lets Claude decide)'
-              : 'Reply in thread as you… (Enter to send, Shift+Enter for a new line)'}
-            className="block w-full resize-none bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/70 disabled:opacity-60"
-          />
-          <div className="flex items-center gap-2 border-t border-border/50 px-2 py-1 text-[11px] text-muted-foreground">
-            {sendAt !== null ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Sending in {secondsLeft}s
-                <button type="button" onClick={() => setSendAt(null)} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent">
-                  <Undo2 className="h-3 w-3" /> Cancel
-                </button>
-              </>
-            ) : busy === 'send' ? (
-              <><Loader2 className="h-3 w-3 animate-spin" /> Sending…</>
-            ) : drafting ? (
-              <><Loader2 className="h-3 w-3 animate-spin" /> Claude is drafting your reply…</>
-            ) : aiMode ? (
-              <>
-                <Sparkles className="h-3 w-3" /> Claude drafts it in your voice; you edit before sending
-                <button type="button" onClick={() => { setAiMode(false); }} className="ml-auto rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">Write it myself</button>
-                <button
-                  type="button"
-                  onClick={() => void draftWithAi()}
-                  className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-0.5 font-medium text-white hover:bg-violet-600/90"
-                >
-                  <Sparkles className="h-3 w-3" /> Draft
-                </button>
-              </>
-            ) : (
-              <>
-                <CornerDownLeft className="h-3 w-3" /> posts in the thread as you
-                <button type="button" onClick={() => setReplying(false)} className="ml-auto rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">Close</button>
-                <button
-                  type="button"
-                  onClick={() => void draftWithAi()}
-                  title="Rewrite what you typed in your voice (or draft one if empty)"
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-violet-600 hover:bg-violet-500/10 dark:text-violet-400"
-                >
-                  <Sparkles className="h-3 w-3" /> Polish
-                </button>
-                <button
-                  type="button"
-                  disabled={!draft.trim()}
-                  onClick={() => setSendAt(Date.now() + SEND_DELAY_MS)}
-                  className="inline-flex items-center gap-1 rounded bg-primary px-2 py-0.5 font-medium text-primary-foreground disabled:opacity-50"
-                >
-                  <Send className="h-3 w-3" /> Send
-                </button>
-              </>
-            )}
+      {/* Up to three faces, stacked, for the people in the conversation. */}
+      <div className="relative h-8 w-8 shrink-0">
+        {authors.slice(0, 3).reverse().map((author, index, list) => (
+          <div
+            key={author.authorId ?? author.author}
+            className={cn('absolute rounded-md ring-2 ring-background', list.length > 1 ? 'h-6 w-6' : 'h-8 w-8')}
+            style={{ left: (list.length - 1 - index) * 5, top: (list.length - 1 - index) * 5 }}
+          >
+            <Avatar mention={author} size={list.length > 1 ? 'h-6 w-6' : 'h-8 w-8'} />
           </div>
-        </div>
-      )}
-
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-
-      <div className="mt-1.5 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
-        <SessionButton seed={slackSeed(mention)} actions={sessions} />
-        <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
-        <button type="button" onClick={() => void markDone()} disabled={busy !== null} className={cn(button, 'hover:border-emerald-500/50 hover:text-emerald-600')} title="React ✅ as you">
-          {busy === 'done' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Done
-        </button>
-        <button
-          ref={setReactButton}
-          type="button"
-          onClick={() => setPickerOpen((open) => !open)}
-          disabled={busy !== null}
-          aria-label="Add a reaction"
-          aria-expanded={pickerOpen}
-          title="React as you (👍 🔥 💯…). Any reaction but 👀 closes it here."
-          className={cn(button, 'px-1.5', pickerOpen && 'bg-accent text-foreground')}
-        >
-          <SmilePlus className="h-3.5 w-3.5" />
-        </button>
-        {pickerOpen && <EmojiPicker anchor={reactButton} onPick={(name, char) => void react(name, char)} onClose={() => setPickerOpen(false)} />}
-        {!replying && (
-          <>
-            <button type="button" onClick={() => setReplying(true)} className={button} title="Reply in the thread">
-              <Reply className="h-3 w-3" /> Reply
-            </button>
-            <button
-              type="button"
-              onClick={openAi}
-              className={cn(button, 'hover:border-violet-500/50 hover:text-violet-600 dark:hover:text-violet-400')}
-              title="Tell Claude what to say; it drafts the reply in your voice for you to edit"
-            >
-              <Sparkles className="h-3 w-3" /> AI reply
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => void resolve()}
-          disabled={resolving || busy !== null}
-          className={cn(button, 'ml-auto border-transparent')}
-          title="Hide it here only. Nothing is sent or added in Slack."
-        >
-          {resolving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />} Resolve
-        </button>
+        ))}
       </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          {isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" title="New since you last looked" />}
+          <span className="truncate font-semibold text-foreground">{authors.map((a) => a.author).join(', ')}</span>
+          <span className="inline-flex min-w-0 items-center gap-0.5">
+            <ChannelIcon kind={latest.channelKind} />
+            <span className="truncate">{latest.channelName}</span>
+          </span>
+          {isThread && <span className="shrink-0 rounded bg-muted px-1">thread</span>}
+          {messages.length > 1 && <span className="shrink-0">· {messages.length} messages</span>}
+          <span className="shrink-0">· {slackTimeAgo(latest.ts)}</span>
+          {latest.myReactions.includes('eyes') && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-sky-500/15 px-1 text-sky-700 dark:text-sky-300" title="You reacted 👀">
+              <Eye className="h-3 w-3" /> on it
+            </span>
+          )}
+          <a href={latest.permalink} target="_blank" rel="noreferrer" className="ml-auto shrink-0 hover:text-primary" title="Open in Slack">
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+
+        {hidden > 0 && (
+          <button type="button" onClick={() => setShowAll(true)} className="mt-1 text-[11px] font-medium text-primary hover:underline">
+            Show {hidden} earlier message{hidden > 1 ? 's' : ''}
+          </button>
+        )}
+        <ul className="mt-1 space-y-0.5">
+          {visible.map((message, index) => {
+            const previous = index > 0 ? visible[index - 1] : hidden > 0 ? messages[hidden - 1] : null;
+            const sameAuthor = previous && (previous.authorId ?? previous.author) === (message.authorId ?? message.author);
+            return (
+              <li key={message.id} className="text-sm" title={new Date(Number(message.ts) * 1000).toLocaleString()}>
+                {messages.length > 1 && !sameAuthor && (
+                  <span className="mr-1.5 text-xs font-semibold text-foreground/80">{message.author}</span>
+                )}
+                <span className="whitespace-pre-wrap break-words">
+                  {message.text || <span className="italic text-muted-foreground">No text (attachment or bot card)</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {replying && (
+          <div className="mt-2 rounded-md border border-border/70 bg-background focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+              disabled={sendAt !== null || busy === 'send' || drafting}
+              rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+              placeholder={aiMode
+                ? 'What should the reply say? (Enter to draft; empty lets Claude decide)'
+                : `Reply ${replyWhere} as you… (Enter to send, Shift+Enter for a new line)`}
+              className="block w-full resize-none bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/70 disabled:opacity-60"
+            />
+            <div className="flex items-center gap-2 border-t border-border/50 px-2 py-1 text-[11px] text-muted-foreground">
+              {sendAt !== null ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Sending in {secondsLeft}s
+                  <button type="button" onClick={() => setSendAt(null)} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent">
+                    <Undo2 className="h-3 w-3" /> Cancel
+                  </button>
+                </>
+              ) : busy === 'send' ? (
+                <><Loader2 className="h-3 w-3 animate-spin" /> Sending…</>
+              ) : drafting ? (
+                <><Loader2 className="h-3 w-3 animate-spin" /> Claude is drafting your reply…</>
+              ) : aiMode ? (
+                <>
+                  <Sparkles className="h-3 w-3" /> Claude reads the conversation and drafts it in your voice
+                  <button type="button" onClick={() => setAiMode(false)} className="ml-auto rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">Write it myself</button>
+                  <button type="button" onClick={() => void draftWithAi()} className="inline-flex items-center gap-1 rounded bg-violet-600 px-2 py-0.5 font-medium text-white hover:bg-violet-600/90">
+                    <Sparkles className="h-3 w-3" /> Draft
+                  </button>
+                </>
+              ) : (
+                <>
+                  <CornerDownLeft className="h-3 w-3" /> posts {replyWhere} as you
+                  <button type="button" onClick={() => setReplying(false)} className="ml-auto rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">Close</button>
+                  <button
+                    type="button"
+                    onClick={() => void draftWithAi()}
+                    title="Rewrite what you typed in your voice (or draft one if empty)"
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-violet-600 hover:bg-violet-500/10 dark:text-violet-400"
+                  >
+                    <Sparkles className="h-3 w-3" /> Polish
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!draft.trim()}
+                    onClick={() => setSendAt(Date.now() + SEND_DELAY_MS)}
+                    className="inline-flex items-center gap-1 rounded bg-primary px-2 py-0.5 font-medium text-primary-foreground disabled:opacity-50"
+                  >
+                    <Send className="h-3 w-3" /> Send
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
+          <SessionButton seed={conversationSeed(conversation)} actions={sessions} />
+          <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
+          <button
+            type="button"
+            onClick={() => void react('white_check_mark', '✅')}
+            disabled={busy !== null}
+            className={cn(button, 'hover:border-emerald-500/50 hover:text-emerald-600')}
+            title={messages.length > 1 ? 'React ✅ on the newest message; closes the whole conversation' : 'React ✅ as you'}
+          >
+            {busy === 'done' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Done
+          </button>
+          <button
+            ref={setReactButton}
+            type="button"
+            onClick={() => setPickerOpen((open) => !open)}
+            disabled={busy !== null}
+            aria-label="Add a reaction"
+            aria-expanded={pickerOpen}
+            title="React on the newest message (👍 🔥 💯…). Any reaction but 👀 closes the conversation here."
+            className={cn(button, 'px-1.5', pickerOpen && 'bg-accent text-foreground')}
+          >
+            <SmilePlus className="h-3.5 w-3.5" />
+          </button>
+          {pickerOpen && <EmojiPicker anchor={reactButton} onPick={(name, char) => void react(name, char)} onClose={() => setPickerOpen(false)} />}
+          {!replying && (
+            <>
+              <button type="button" onClick={() => setReplying(true)} className={button} title={`Reply ${replyWhere}`}>
+                <Reply className="h-3 w-3" /> Reply
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReplying(true);
+                  setAiMode(true);
+                  setDraft('');
+                }}
+                className={cn(button, 'hover:border-violet-500/50 hover:text-violet-600 dark:hover:text-violet-400')}
+                title="Tell Claude what to say; it reads the conversation and drafts the reply in your voice"
+              >
+                <Sparkles className="h-3 w-3" /> AI reply
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => void resolve()}
+            disabled={resolving || busy !== null}
+            className={cn(button, 'ml-auto border-transparent')}
+            title="Hide this conversation here only. Nothing is sent or added in Slack."
+          >
+            {resolving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />} Resolve
+          </button>
+        </div>
       </div>
     </li>
   );
@@ -398,12 +475,18 @@ export default function SlackSection({
     return () => window.clearInterval(timer);
   }, [closed.length]);
 
-  const onClosed = (mention: SlackMention, how: Closed['how'], reaction?: Reaction) => {
+  const conversations = useMemo(() => groupConversations(mentions), [mentions]);
+
+  const onClosed = (conversation: Conversation, how: Closed['how'], reaction?: Reaction) => {
+    const ids = new Set(conversation.messages.map((m) => m.id));
     onChange({
-      mentions: mentions.filter((m) => m.id !== mention.id),
-      resolved: how === 'resolved' ? byNewest([mention, ...resolved]) : resolved,
+      mentions: mentions.filter((m) => !ids.has(m.id)),
+      resolved: how === 'resolved' ? byNewest([...conversation.messages, ...resolved]) : resolved,
     });
-    setClosed((list) => [...list.filter((c) => c.mention.id !== mention.id), { mention, how, at: Date.now(), reaction }]);
+    setClosed((list) => [
+      ...list.filter((c) => c.conversation.key !== conversation.key),
+      { conversation, how, at: Date.now(), reaction },
+    ]);
   };
 
   const onReacted = (mention: SlackMention) => {
@@ -413,12 +496,14 @@ export default function SlackSection({
   const undoDone = async (entry: Closed) => {
     setClosed((list) => list.filter((c) => c !== entry));
     try {
+      const { latest, messages } = entry.conversation;
       if (entry.how === 'resolved') {
-        await setResolved([entry.mention], false);
+        await setResolved(messages, false);
         return;
       }
-      await workApi.slackDone(projectPath, entry.mention.id, false, entry.reaction?.name);
-      onChange({ mentions: byNewest([entry.mention, ...mentions]), resolved });
+      const others = messages.filter((m) => m.id !== latest.id).map((m) => m.id);
+      await workApi.slackDone(projectPath, latest.id, false, entry.reaction?.name, others);
+      onChange({ mentions: byNewest([...messages, ...mentions]), resolved });
     } catch (e) {
       setUndoError((e as Error).message);
     }
@@ -429,7 +514,9 @@ export default function SlackSection({
       <div className="flex items-center gap-2 px-1 pb-1.5 pt-1">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Slack · needs you
-          <span className="ml-1 font-normal normal-case text-muted-foreground/70">· {mentions.length}</span>
+          <span className="ml-1 font-normal normal-case text-muted-foreground/70" title={`${mentions.length} message${mentions.length === 1 ? '' : 's'}`}>
+            · {conversations.length}{conversations.length !== mentions.length ? ` (${mentions.length} msgs)` : ''}
+          </span>
         </h3>
         {mentions.length > 0 && (
           <button
@@ -474,17 +561,17 @@ export default function SlackSection({
       {closed.length > 0 && (
         <ul className="mb-2 space-y-1">
           {closed.map((entry) => (
-            <li key={entry.mention.id} className="flex items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
+            <li key={entry.conversation.key} className="flex items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
               <Check className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                {entry.how === 'done' ? `${entry.reaction?.char ?? (entry.reaction ? `:${entry.reaction.name}:` : '✅')} added on` : entry.how === 'resolved' ? 'Resolved' : 'Replied to'} {entry.mention.author}'s message
+                {entry.how === 'done' ? `${entry.reaction?.char ?? (entry.reaction ? `:${entry.reaction.name}:` : '✅')} added on` : entry.how === 'resolved' ? 'Resolved' : 'Replied to'} {authorsOf(entry.conversation).map((m) => m.author).join(', ')}{entry.conversation.messages.length > 1 ? ` (${entry.conversation.messages.length} messages)` : "'s message"}
               </span>
               {entry.how !== 'replied' ? (
                 <button type="button" onClick={() => void undoDone(entry)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-emerald-500/20">
                   <Undo2 className="h-3 w-3" /> Undo
                 </button>
               ) : (
-                <a href={entry.mention.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-emerald-500/20">
+                <a href={entry.conversation.latest.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-emerald-500/20">
                   <ExternalLink className="h-3 w-3" /> Thread
                 </a>
               )}
@@ -497,8 +584,16 @@ export default function SlackSection({
       )}
 
       <ul className="divide-y divide-border/50">
-        {mentions.map((mention) => (
-          <MentionRow key={mention.id} mention={mention} isNew={newKeys.has(`slack:${mention.id}`)} projectPath={projectPath} sessions={sessions} onClosed={onClosed} onReacted={onReacted} />
+        {conversations.map((conversation) => (
+          <ConversationRow
+            key={conversation.key}
+            conversation={conversation}
+            isNew={conversation.messages.some((m) => newKeys.has(`slack:${m.id}`))}
+            projectPath={projectPath}
+            sessions={sessions}
+            onClosed={onClosed}
+            onReacted={onReacted}
+          />
         ))}
       </ul>
       {!error && mentions.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Inbox zero: nothing on Slack is waiting on you.</p>}

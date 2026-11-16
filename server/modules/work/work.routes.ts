@@ -19,7 +19,7 @@ import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
 import { draftSlackReply } from './services/ai-reply.service.js';
 import { deliverMessage, prepareMessage, type ComposeTarget } from './services/slack-compose.service.js';
-import { OPEN_REACTIONS, isReactionName, listCustomEmoji, markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
+import { OPEN_REACTIONS, forgetAnswered, isReactionName, listCustomEmoji, markAnsweredLocally, markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
@@ -256,6 +256,12 @@ router.delete('/links', asyncHandler(async (req: Request, res: Response) => {
   res.json(createApiSuccessResponse({ linked: false }));
 }));
 
+/** Kvn: optional list of Slack message ids ("C123:1700000000.000100"), as sent by grouped conversations. */
+function readIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((id): id is string => typeof id === 'string' && /^[A-Z0-9]+:\d+\.\d+$/.test(id)).slice(0, 200);
+}
+
 function readSlackId(body: Record<string, unknown>): { projectPath: string; id: string } {
   const projectPath = readProjectPath(body.projectPath);
   const config = requireConfig(projectPath);
@@ -294,16 +300,21 @@ router.post('/slack/done', asyncHandler(async (req: Request, res: Response) => {
   const { projectPath, id } = readSlackId(body);
   if (body.emoji !== undefined && !isReactionName(body.emoji)) throw new AppError('Invalid emoji name.', { code: 'INVALID_REQUEST', statusCode: 400 });
   const emoji = (body.emoji as string | undefined) ?? 'white_check_mark';
+  // Kvn: the other messages of the same grouped conversation, closed along with it.
+  const alsoIds = readIdList(body.alsoIds);
   const secrets = readSecrets();
   await slackAction(() => (body.done === false ? unmarkDone(secrets, id, emoji) : markDone(secrets, id, emoji)));
   if (body.done === false) {
+    forgetAnswered(alsoIds);
     markStale(projectPath);
   } else {
+    if (!OPEN_REACTIONS.has(emoji)) markAnsweredLocally(alsoIds);
+    const closing = new Set([id, ...alsoIds]);
     patchSnapshot(projectPath, (snap) => {
       if (!snap.slack) return;
       snap.slack.items = OPEN_REACTIONS.has(emoji)
         ? snap.slack.items.map((m) => (m.id === id ? { ...m, myReactions: [...new Set([...m.myReactions, emoji])] } : m))
-        : snap.slack.items.filter((m) => m.id !== id);
+        : snap.slack.items.filter((m) => !closing.has(m.id));
     });
   }
   res.json(createApiSuccessResponse({ id, done: body.done !== false, emoji }));
@@ -322,8 +333,12 @@ router.post('/slack/ai-reply', asyncHandler(async (req: Request, res: Response) 
   const threadTs = typeof body.threadTs === 'string' ? body.threadTs : '';
   const instruction = typeof body.instruction === 'string' ? body.instruction.slice(0, 2000) : '';
   const author = typeof body.author === 'string' ? body.author.slice(0, 100) : 'them';
+  // Kvn: a grouped conversation sends its messages ("Name: text" lines) as the context.
+  const context = Array.isArray(body.context)
+    ? body.context.filter((line): line is string => typeof line === 'string').slice(-60).map((line) => line.slice(0, 2000))
+    : [];
   const text = await slackAction(async () => draftSlackReply({
-    thread: await readThread(readSecrets(), id, threadTs),
+    thread: context.length > 0 ? context : await readThread(readSecrets(), id, threadTs),
     instruction,
     author,
     voiceGuideFile: config.slack?.voiceGuideFile,
@@ -378,8 +393,11 @@ router.post('/slack/reply', asyncHandler(async (req: Request, res: Response) => 
   const threadTs = typeof body.threadTs === 'string' ? body.threadTs : '';
   if (!text) throw new AppError('text is required.', { code: 'INVALID_REQUEST', statusCode: 400 });
   const result = await slackAction(() => postReply(readSecrets(), id, threadTs, text.slice(0, 4000)));
+  const alsoIds = readIdList(body.alsoIds);
+  markAnsweredLocally(alsoIds);
+  const closing = new Set([id, ...alsoIds]);
   patchSnapshot(projectPath, (snap) => {
-    if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => m.id !== id);
+    if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => !closing.has(m.id));
   });
   res.json(createApiSuccessResponse({ id, ...result }));
 }));

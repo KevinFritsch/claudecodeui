@@ -162,17 +162,20 @@ export const workApi = {
     request<{ linked: boolean }>('/api/work/links', { method: 'DELETE', body: { projectPath, itemType, itemKey, sessionId } }),
   resolve: (projectPath: string, itemType: WorkLink['itemType'], itemKeys: string[], resolved: boolean) =>
     request<{ count: number; resolved: boolean }>('/api/work/resolve', { method: 'POST', body: { projectPath, itemType, itemKeys, resolved } }),
-  slackDone: (projectPath: string, id: string, done: boolean, emoji?: string) =>
-    request<{ id: string; done: boolean; emoji: string }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done, emoji } }),
+  /** `alsoIds`: the rest of a grouped conversation, closed (or reopened) along with `id`. */
+  slackDone: (projectPath: string, id: string, done: boolean, emoji?: string, alsoIds: string[] = []) =>
+    request<{ id: string; done: boolean; emoji: string }>('/api/work/slack/done', { method: 'POST', body: { projectPath, id, done, emoji, alsoIds } }),
   slackCustomEmoji: () => request<{ custom: Record<string, string> | null }>('/api/work/slack/emoji'),
-  slackAiReply: (projectPath: string, id: string, threadTs: string, author: string, instruction: string) =>
-    request<{ text: string }>('/api/work/slack/ai-reply', { method: 'POST', body: { projectPath, id, threadTs, author, instruction } }),
+  /** `context`: "Name: text" lines of a grouped conversation, used instead of re-reading the thread. */
+  slackAiReply: (projectPath: string, id: string, threadTs: string, author: string, instruction: string, context?: string[]) =>
+    request<{ text: string }>('/api/work/slack/ai-reply', { method: 'POST', body: { projectPath, id, threadTs, author, instruction, context } }),
   composePrepare: (projectPath: string, instruction: string) =>
     request<ComposePreview>('/api/work/slack/compose/prepare', { method: 'POST', body: { projectPath, instruction } }),
   composeDeliver: (projectPath: string, payload: { mode: 'draft' | 'send'; target: ComposeTarget; threadTs: string | null; text: string }) =>
     request<{ mode: string; via: string }>('/api/work/slack/compose/deliver', { method: 'POST', body: { projectPath, ...payload } }),
-  slackReply: (projectPath: string, id: string, threadTs: string, text: string) =>
-    request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text } }),
+  /** `threadTs` '' posts a plain message in the conversation (DM/group bursts). */
+  slackReply: (projectPath: string, id: string, threadTs: string, text: string, alsoIds: string[] = []) =>
+    request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text, alsoIds } }),
   badge: (projectPath: string) => request<{ count: number }>(`/api/work/badge?${q(projectPath)}`),
   markSeen: (projectPath: string, keys: string[]) =>
     request<{ count: number }>('/api/work/seen', { method: 'POST', body: { projectPath, keys } }),

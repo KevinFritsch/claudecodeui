@@ -166,7 +166,13 @@ async function checkState(slack: SlackClient, me: string, match: SearchMatch, th
   const mine = (own?.reactions ?? []).filter((r) => r.users?.includes(me)).map((r) => r.name);
   // A 👍, 🔥, 💯… from the user is an answer too; only 👀 ("on it") keeps it open.
   const checked = mine.some((name) => !OPEN_REACTIONS.has(name));
-  let replied = data.messages.some((m) => m.user === me && Number(m.ts) > Number(match.ts));
+  // Kvn: a later reply, or a reaction on a later message (a ✅/👍 on the newest message of a burst
+  // answers the whole burst), counts as answered. 👀 ("on it") does not.
+  const answeredBy = (m: ThreadMessage) => Number(m.ts) > Number(match.ts) && (
+    m.user === me
+    || (m.reactions ?? []).some((r) => r.users?.includes(me) && !OPEN_REACTIONS.has(r.name))
+  );
+  let replied = data.messages.some(answeredBy);
 
   // A top-level message is often answered in the conversation itself rather
   // than in a thread: any later message from the user counts in a DM or group
@@ -180,7 +186,7 @@ async function checkState(slack: SlackClient, me: string, match: SearchMatch, th
       ...(latest ? { latest } : {}),
       limit: 50,
     });
-    replied = history.messages.some((m) => m.user === me && Number(m.ts) > Number(match.ts));
+    replied = history.messages.some(answeredBy);
   }
 
   return {
@@ -320,6 +326,19 @@ export async function markDone(secrets: WorkSecrets, id: string, name = 'white_c
   });
 }
 
+/** Kvn: closes the other messages of a grouped conversation once its newest one was answered. */
+export function markAnsweredLocally(ids: string[]): void {
+  for (const id of ids) {
+    const cached = stateCache.get(id);
+    stateCache.set(id, { myReactions: [], replyCount: 0, ...cached, state: 'answered', checkedAt: Date.now() });
+  }
+}
+
+/** Kvn: reopens them (undo); the next refresh re-checks them against Slack. */
+export function forgetAnswered(ids: string[]): void {
+  for (const id of ids) stateCache.delete(id);
+}
+
 export async function unmarkDone(secrets: WorkSecrets, id: string, name = 'white_check_mark'): Promise<void> {
   const { channel, ts } = parseId(id);
   try {
@@ -350,11 +369,15 @@ export async function listCustomEmoji(secrets: WorkSecrets): Promise<Record<stri
   return map;
 }
 
-/** Posts a reply in the message's thread, as the user. */
+/** Posts a reply as the user: in the thread, or (threadTs '') as a plain message in the conversation. */
 export async function postReply(secrets: WorkSecrets, id: string, threadTs: string, text: string): Promise<{ ts: string }> {
   const { channel } = parseId(id);
-  if (!/^\d+\.\d+$/.test(threadTs)) throw new Error('Invalid thread.');
-  const data = await client(secrets).call<{ ts: string }>('chat.postMessage', { channel, thread_ts: threadTs, text }, true);
+  if (threadTs && !/^\d+\.\d+$/.test(threadTs)) throw new Error('Invalid thread.');
+  const data = await client(secrets).call<{ ts: string }>(
+    'chat.postMessage',
+    { channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) },
+    true,
+  );
   const cached = stateCache.get(id);
   stateCache.set(id, { myReactions: [], replyCount: 0, ...cached, state: 'answered', checkedAt: Date.now() });
   return { ts: data.ts };
