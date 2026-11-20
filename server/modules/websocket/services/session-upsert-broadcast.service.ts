@@ -51,6 +51,8 @@ async function buildSessionUpsertedEvent(
       topic: sessionTopicsDb.getTopic(row.session_id),
       messageCount: 0,
       lastActivity: row.updated_at ?? row.created_at ?? new Date().toISOString(),
+      forkedFromSessionId: row.forked_from_session_id ?? null,
+      forkAncestors: row.forked_from_session_id ? sessionsDb.getForkAncestors(row.session_id) : [],
     },
     project: project
       ? {

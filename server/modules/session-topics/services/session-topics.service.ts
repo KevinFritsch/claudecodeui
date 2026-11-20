@@ -4,7 +4,7 @@ import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import { sessionTopicsDb, sessionsDb } from '@/modules/database/index.js';
-import { broadcastSessionUpserted, chatRunRegistry } from '@/modules/websocket/index.js';
+import { broadcastSessionUpserted, chatRunRegistry, onRunSettled } from '@/modules/websocket/index.js';
 
 /**
  * Keeps a short "what is this conversation about right now" line per session
@@ -249,7 +249,7 @@ export function scheduleTopicRefresh(sessionId: string): void {
 export function initializeSessionTopics(runner: TopicRunner = claudeCliTopicRunner): void {
   if (process.env.CLOUDCLI_SESSION_TOPICS === 'false') return;
   activeRunner = runner;
-  unsubscribeRunCompleted = chatRunRegistry.onRunCompleted((sessionId) => scheduleTopicRefresh(sessionId));
+  unsubscribeRunCompleted = onRunSettled((sessionId) => scheduleTopicRefresh(sessionId));
 
   // Give the most recent sessions a topic without waiting for their next run.
   backfillTimer = setTimeout(() => {

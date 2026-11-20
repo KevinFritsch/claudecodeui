@@ -41,6 +41,8 @@ type SidebarSessionItemProps = {
   isSelecting: boolean;
   /** Ticked for the pending bulk delete. Resolved by the list, which never ticks a running row. */
   isChecked: boolean;
+  /** Project fork trees use denser rows so indentation does not consume the title's space. */
+  treeRow?: boolean;
   /** Takes the owning projectId so this memoized row binds itself without the list making a closure per row. */
   onToggleSessionSelected: (projectId: string, sessionId: string) => void;
   t: TFunction;
@@ -68,6 +70,7 @@ function SidebarSessionItem({
   onForkSession,
   isSelecting,
   isChecked,
+  treeRow = false,
   onToggleSessionSelected,
   t,
 }: SidebarSessionItemProps) {
@@ -252,7 +255,7 @@ function SidebarSessionItem({
           onClick={isSelecting ? (isSelectable ? toggleSelected : undefined) : selectMobileSession}
           onKeyDown={isSelecting ? handleSelectionKeyDown : undefined}
         >
-          <div className="flex items-center gap-2">
+          <div className={cn('flex items-center', treeRow ? 'gap-1.5' : 'gap-2')}>
             {selectionIcon}
             {sessionMarker}
 
@@ -549,7 +552,7 @@ function SidebarSessionItem({
           }}
           onKeyDown={isSelecting ? handleSelectionKeyDown : undefined}
         >
-          <div className="flex w-full min-w-0 items-center gap-2">
+          <div className={cn('flex w-full min-w-0 items-center', treeRow ? 'gap-1.5' : 'gap-2')}>
             {selectionIcon}
             {sessionMarker}
             {/* Hidden, not removed, while renaming so the row keeps its height under the field. */}
