@@ -28,7 +28,7 @@ function slackTimeAgo(ts: string): string {
 }
 
 /** Kvn: messages that belong together: a thread, or a burst in one DM/group/channel. */
-type Conversation = {
+export type Conversation = {
   key: string;
   messages: SlackMention[];
   latest: SlackMention;
@@ -110,6 +110,7 @@ function ChannelIcon({ kind }: { kind: SlackMention['channelKind'] }) {
 }
 
 type Reaction = { name: string; char: string | null };
+export type SlackClosedHow = 'done' | 'replied' | 'resolved';
 type Closed = { conversation: Conversation; how: 'done' | 'replied' | 'resolved'; at: number; reaction?: Reaction };
 
 /** 👀 means "on it": it marks the message without closing it. */
@@ -117,7 +118,7 @@ const OPEN_REACTIONS = new Set(['eyes']);
 
 const COLLAPSED_COUNT = 4;
 
-function ConversationRow({
+export function ConversationRow({
   conversation,
   projectPath,
   sessions,
@@ -128,7 +129,8 @@ function ConversationRow({
   conversation: Conversation;
   isNew: boolean;
   projectPath: string;
-  sessions: SessionActions;
+  /** Omitted inside a session (the item is already attached to it): hides "Start session". */
+  sessions?: SessionActions;
   onClosed: (conversation: Conversation, how: Closed['how'], reaction?: Reaction) => void;
   onReacted: (message: SlackMention) => void;
 }) {
@@ -369,8 +371,12 @@ function ConversationRow({
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
 
         <div className="mt-1.5 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
-          <SessionButton seed={conversationSeed(conversation)} actions={sessions} />
-          <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
+          {sessions && (
+            <>
+              <SessionButton seed={conversationSeed(conversation)} actions={sessions} />
+              <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
+            </>
+          )}
           <button
             type="button"
             onClick={() => void react('white_check_mark', '✅')}

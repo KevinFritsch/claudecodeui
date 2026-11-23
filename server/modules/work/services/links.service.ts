@@ -40,6 +40,12 @@ function db() {
         PRIMARY KEY (project_path, item_type, item_key, session_id)
       );
     `);
+    // Kvn: a copy of the item as it was when linked (the Slack message), so the
+    // session can still show and answer it after it left the open list.
+    const columns = connection.prepare('PRAGMA table_info(work_links)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'meta')) {
+      connection.exec('ALTER TABLE work_links ADD COLUMN meta TEXT');
+    }
     ensured = true;
   }
   return connection;
@@ -76,13 +82,26 @@ export const linksService = {
     return this.list(projectPath).filter((link) => link.sessionId === sessionId);
   },
 
-  add(projectPath: string, itemType: WorkItemType, itemKey: string, sessionId: string): void {
+  add(projectPath: string, itemType: WorkItemType, itemKey: string, sessionId: string, meta?: unknown): void {
     db()
       .prepare(
-        `INSERT OR IGNORE INTO work_links (project_path, item_type, item_key, session_id)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO work_links (project_path, item_type, item_key, session_id, meta)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(projectPath, itemType, itemKey, sessionId);
+      .run(projectPath, itemType, itemKey, sessionId, meta === undefined ? null : JSON.stringify(meta));
+  },
+
+  /** The copy stored when the item was linked (any session), or null. */
+  meta<T>(projectPath: string, itemType: WorkItemType, itemKey: string): T | null {
+    const row = db()
+      .prepare('SELECT meta FROM work_links WHERE project_path = ? AND item_type = ? AND item_key = ? AND meta IS NOT NULL LIMIT 1')
+      .get(projectPath, itemType, itemKey) as { meta: string } | undefined;
+    if (!row) return null;
+    try {
+      return JSON.parse(row.meta) as T;
+    } catch {
+      return null;
+    }
   },
 
   remove(projectPath: string, itemType: WorkItemType, itemKey: string, sessionId: string): boolean {

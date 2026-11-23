@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cn } from '@/shared/utils';
 import { workApi, type SessionLinkView, type WorkItems, type WorkLink } from '@/modules/work/api';
+import SessionItemPopover from '@/modules/work/SessionItemPopover';
+import { statusDotClass } from '@/modules/work/JiraBadges';
 import { useWorkConfig } from '@/modules/work/useWorkConfig';
 
 export const WORK_LINKS_CHANGED_EVENT = 'work:links-changed';
@@ -39,6 +41,8 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [filter, setFilter] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // The chip whose quick actions are open (Jira moves, Slack reply…).
+  const [openItem, setOpenItem] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => {
@@ -48,6 +52,7 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
 
   useEffect(() => {
     setLinks([]);
+    setOpenItem(null);
     load();
     const onChange = () => load();
     window.addEventListener(WORK_LINKS_CHANGED_EVENT, onChange);
@@ -98,6 +103,7 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
     window.dispatchEvent(new Event(WORK_LINKS_CHANGED_EVENT));
   };
 
+  const openLink = openItem ? links.find((l) => `${l.itemType}:${l.itemKey}` === openItem.id) ?? null : null;
   const maxChips = compact ? 1 : 3;
   const visible = links.slice(0, maxChips);
   const hidden = links.length - visible.length;
@@ -106,28 +112,59 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
     <div ref={boxRef} className="relative flex min-w-0 flex-shrink items-center gap-1">
       {visible.map((link) => {
         const Icon = ICONS[link.itemType] ?? Hash;
+        const id = `${link.itemType}:${link.itemKey}`;
+        const hasActions = link.itemType !== 'pr';
+        const isOpen = openItem?.id === id;
+        const dot = link.itemType === 'jira'
+          ? statusDotClass(link.status)
+          : link.itemType === 'slack'
+            ? (link.status === 'waiting' ? 'bg-amber-500' : 'bg-emerald-500')
+            : link.itemType === 'todo'
+              ? (link.status === 'open' ? 'bg-amber-500' : 'bg-emerald-500')
+              : null;
         const chip = (
           <>
             <Icon className="h-3 w-3 flex-shrink-0" />
             <span className="truncate">{link.label}</span>
+            {link.itemType === 'jira' && link.status && !compact && (
+              <span className="hidden flex-shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground lg:inline">{link.status}</span>
+            )}
+            {dot && <span className={cn('h-1.5 w-1.5 flex-shrink-0 rounded-full', dot)} aria-hidden />}
           </>
         );
+        const hint = link.itemType === 'jira'
+          ? `${link.title}${link.status ? ` · ${link.status}` : ''}\nClick to move it (QA, Done…)`
+          : link.itemType === 'slack'
+            ? `${link.title}\nClick to mark done, react or reply`
+            : `${link.title}${link.derived ? ' (from the linked Jira task)' : ''}`;
         return (
           <span
-            key={`${link.itemType}:${link.itemKey}`}
+            key={id}
             className={cn(
-              'group/chip inline-flex h-5 max-w-[9rem] items-center gap-1 rounded border px-1.5 text-[11px]',
+              'group/chip inline-flex h-5 max-w-[13rem] items-center gap-1 rounded border px-1.5 text-[11px] transition-colors',
               link.derived ? 'border-dashed border-border text-muted-foreground' : 'border-border/80 bg-muted/40 text-foreground/90',
+              hasActions && 'hover:border-primary/50 hover:bg-accent',
+              isOpen && 'border-primary/60 bg-accent',
               link.status === 'closed' && 'opacity-60',
             )}
-            title={`${link.title}${link.derived ? ' (from the linked Jira task)' : ''}`}
+            title={hint}
           >
-            {link.url ? (
+            {hasActions ? (
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={isOpen}
+                onClick={(event) => setOpenItem(isOpen ? null : { id, anchor: event.currentTarget.parentElement ?? event.currentTarget })}
+                className="inline-flex min-w-0 items-center gap-1"
+              >
+                {chip}
+              </button>
+            ) : link.url ? (
               <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 hover:text-primary">{chip}</a>
             ) : (
               <span className="inline-flex min-w-0 items-center gap-1">{chip}</span>
             )}
-            {!link.derived && (
+            {!link.derived && !hasActions && (
               <button
                 type="button"
                 onClick={() => void detach(link)}
@@ -159,6 +196,22 @@ export default function SessionWorkLinks({ projectPath, sessionId, compact = fal
       >
         <Plus className="h-3 w-3" />
       </button>
+
+      {openLink && openItem && (
+        <SessionItemPopover
+          key={openItem.id}
+          link={openLink}
+          anchor={openItem.anchor}
+          projectPath={projectPath}
+          jiraActions={config.jira?.actions ?? []}
+          onChanged={load}
+          onDetach={() => {
+            setOpenItem(null);
+            void detach(openLink);
+          }}
+          onClose={() => setOpenItem(null)}
+        />
+      )}
 
       {pickerOpen && (
         <div className="absolute left-0 top-6 z-50 w-80 max-w-[85vw] rounded-md border border-border bg-popover p-1.5 shadow-lg">

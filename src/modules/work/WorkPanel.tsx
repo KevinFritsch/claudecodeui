@@ -24,6 +24,7 @@ import { workApi, type JiraTask, type PullRequest, type Todo, type WorkConfig, t
 import { setPendingWorkLink } from '@/modules/work/pendingWorkLink';
 import { SessionButton, jiraSeed, prSeed, todoSeed, type SessionActions } from '@/modules/work/SessionButton';
 import WorkAssets from '@/modules/work/WorkAssets';
+import { SprintBadge, StatusBadge } from '@/modules/work/JiraBadges';
 import SlackSection from '@/modules/work/SlackSection';
 import SlackCompose from '@/modules/work/SlackCompose';
 import { WORK_SEEN_EVENT } from '@/modules/work/useWorkBadge';
@@ -64,53 +65,6 @@ function timeAgo(iso: string): string {
 
 function ageInDays(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  'in progress': 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  'change requested': 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  'to do': 'bg-muted text-muted-foreground',
-  'pull request': 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-  'pending information': 'bg-muted text-muted-foreground',
-  qa: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-  'qa app': 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-  done: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-};
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={cn('inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-medium uppercase tracking-wide', STATUS_STYLES[status.toLowerCase()] ?? 'bg-muted text-muted-foreground')}>
-      {status}
-    </span>
-  );
-}
-
-/** "GOL Sprint 87" → "Sprint 87": the project prefix is noise inside the project's own dashboard. */
-function shortSprintName(name: string): string {
-  const match = name.match(/sprint\s*\d+/i);
-  return match ? match[0].replace(/^sprint/i, 'Sprint') : name;
-}
-
-function SprintBadge({ task }: { task: JiraTask }) {
-  if (!task.sprint) {
-    return (
-      <span className="inline-flex shrink-0 items-center rounded border border-dashed border-muted-foreground/40 px-1.5 py-px text-[10px] font-medium text-muted-foreground" title="Not in a sprint">
-        Backlog
-      </span>
-    );
-  }
-  const isActive = task.sprint.state === 'active';
-  return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-medium',
-        isActive ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300' : 'bg-muted text-muted-foreground',
-      )}
-      title={isActive ? `In the current sprint (${task.sprint.name})` : `Planned for ${task.sprint.name}`}
-    >
-      {isActive ? '● ' : ''}{shortSprintName(task.sprint.name)}{isActive ? '' : ' (next)'}
-    </span>
-  );
 }
 
 type SprintFilter = 'all' | 'sprint' | 'backlog';

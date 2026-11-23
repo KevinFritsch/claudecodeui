@@ -10,7 +10,7 @@ import type { Request, Response } from 'express';
 
 import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils.js';
 
-import { transitionIssue } from './services/jira.service.js';
+import { transitionIssue, type JiraTask } from './services/jira.service.js';
 import { linksService, type WorkItemType } from './services/links.service.js';
 import { autoLinkPullRequests } from './services/pr-autolink.service.js';
 import { assetsForLinks, type WorkAsset } from './services/session-assets.service.js';
@@ -19,7 +19,7 @@ import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
 import { draftSlackReply } from './services/ai-reply.service.js';
 import { deliverMessage, prepareMessage, type ComposeTarget } from './services/slack-compose.service.js';
-import { OPEN_REACTIONS, forgetAnswered, isReactionName, listCustomEmoji, markAnsweredLocally, markDone, postReply, readThread, unmarkDone } from './services/slack.service.js';
+import { OPEN_REACTIONS, forgetAnswered, isReactionName, listCustomEmoji, markAnsweredLocally, markDone, postReply, readThread, unmarkDone, type SlackMention } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
 import { getProjectConfig, readSecrets, type WorkProjectConfig } from './services/work-config.service.js';
@@ -186,6 +186,13 @@ type SessionLinkView = {
   status: string | null;
   /** True when implied (a PR carrying the Jira key of a linked task) rather than stored. */
   derived: boolean;
+  /** Kvn: the task itself (when still on the board), for the session's quick actions. */
+  jira?: JiraTask | null;
+  /**
+   * Kvn: the linked message plus the open messages of its channel (the client
+   * groups them into the conversation), and whether it is still waiting.
+   */
+  slack?: { messages: SlackMention[]; waiting: boolean } | null;
 };
 
 /** What a session is attached to, resolved for display in its session bar. */
@@ -218,6 +225,7 @@ router.get('/session-links', asyncHandler(async (req: Request, res: Response) =>
       views.push({
         itemType: 'jira', itemKey: link.itemKey, label: link.itemKey, title: task?.summary ?? link.itemKey,
         url: task?.url ?? (jiraSite ? `${jiraSite}/browse/${link.itemKey}` : null), status: task?.status ?? null, derived: false,
+        jira: task ?? null,
       });
     } else if (link.itemType === 'pr') {
       const [repo, number] = link.itemKey.split('#');
@@ -233,10 +241,15 @@ router.get('/session-links', asyncHandler(async (req: Request, res: Response) =>
         status: todo?.status ?? null, derived: false,
       });
     } else {
-      const mention = mentions.find((m) => m.id === link.itemKey);
+      const open = mentions.find((m) => m.id === link.itemKey);
+      const mention = open ?? linksService.meta<SlackMention>(projectPath, 'slack', link.itemKey);
+      const waiting = Boolean(open) && !resolvedService.keys(projectPath, 'slack').has(link.itemKey);
       views.push({
         itemType: 'slack', itemKey: link.itemKey, label: mention ? `@${mention.author}` : 'Slack', title: mention?.text.slice(0, 200) ?? 'Slack message',
-        url: mention?.permalink ?? null, status: null, derived: false,
+        url: mention?.permalink ?? null, status: waiting ? 'waiting' : 'answered', derived: false,
+        slack: mention
+          ? { messages: [mention, ...mentions.filter((m) => m.channelId === mention.channelId && m.id !== mention.id)], waiting }
+          : null,
       });
     }
   }
@@ -246,7 +259,14 @@ router.get('/session-links', asyncHandler(async (req: Request, res: Response) =>
 /** Attaches a chat session to a Jira task or to-do. */
 router.post('/links', asyncHandler(async (req: Request, res: Response) => {
   const link = readLinkBody((req.body ?? {}) as Record<string, unknown>);
-  linksService.add(link.projectPath, link.itemType, link.itemKey, link.sessionId);
+  let meta: unknown;
+  if (link.itemType === 'slack') {
+    // Keep the message with the link: once answered it leaves the open list.
+    const config = getProjectConfig(link.projectPath);
+    const snapshot = config ? (await getSnapshot(link.projectPath, config).catch(() => null))?.snapshot : null;
+    meta = snapshot?.slack?.items.find((m) => m.id === link.itemKey);
+  }
+  linksService.add(link.projectPath, link.itemType, link.itemKey, link.sessionId, meta);
   res.status(201).json(createApiSuccessResponse({ linked: true }));
 }));
 

@@ -105,6 +105,10 @@ export type SessionLinkView = {
   url: string | null;
   status: string | null;
   derived: boolean;
+  /** The task itself, when it is still on the board. */
+  jira?: JiraTask | null;
+  /** The linked message plus the open messages of its channel, and whether it still waits on the user. */
+  slack?: { messages: SlackMention[]; waiting: boolean } | null;
 };
 
 export type SourceResult<T> = { items: T; error: string | null; fetchedAt: string };
