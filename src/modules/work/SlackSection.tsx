@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/shared/utils';
 import { workApi, type SlackMention } from '@/modules/work/api';
 import EmojiPicker, { recordEmojiUse } from '@/modules/work/EmojiPicker';
+import { useDelayedSend } from '@/modules/work/useDelayedSend';
 import { SessionButton, clip, type SessionActions, type SessionSeed } from '@/modules/work/SessionButton';
 
-const SEND_DELAY_MS = 5_000;
 const UNDO_WINDOW_MS = 8_000;
 
 function clockTime(ts: string): string {
@@ -143,10 +143,9 @@ export function ConversationRow({
   const [aiMode, setAiMode] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [draft, setDraft] = useState('');
-  const [sendAt, setSendAt] = useState<number | null>(null);
-  const [busy, setBusy] = useState<'done' | 'send' | null>(null);
+  const delayed = useDelayedSend();
+  const [busy, setBusy] = useState<'done' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [, tick] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [reactButton, setReactButton] = useState<HTMLButtonElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -168,24 +167,16 @@ export function ConversationRow({
     if (replying) textareaRef.current?.focus();
   }, [replying]);
 
-  useEffect(() => {
-    if (sendAt === null) return undefined;
-    const timer = window.setInterval(() => {
-      tick((n) => n + 1);
-      if (Date.now() >= sendAt) {
-        window.clearInterval(timer);
-        setSendAt(null);
-        setBusy('send');
-        workApi.slackReply(projectPath, latest.id, replyThreadTs, draft.trim(), otherIds)
-          .then(() => onClosed(conversation, 'replied'))
-          .catch((e: Error) => {
-            setError(e.message);
-            setBusy(null);
-          });
-      }
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [conversation, draft, latest.id, onClosed, otherIds, projectPath, replyThreadTs, sendAt]);
+  // Queued on the server: it still goes out if this view is left during the countdown.
+  const send = () => {
+    const text = draft.trim();
+    if (!text || delayed.active) return;
+    setError(null);
+    void delayed.start(
+      async (delayMs) => (await workApi.slackReply(projectPath, latest.id, replyThreadTs, text, otherIds, { delayMs, label: `Reply to ${latest.author}` })).pending,
+      { onSent: () => onClosed(conversation, 'replied'), onFailed: (message) => setError(message) },
+    );
+  };
 
   // Any reaction (on the newest message) answers the whole conversation, except 👀.
   const react = async (name: string, char: string | null) => {
@@ -243,13 +234,12 @@ export function ConversationRow({
         if (!drafting) void draftWithAi();
         return;
       }
-      if (draft.trim()) setSendAt(Date.now() + SEND_DELAY_MS);
+      send();
     } else if (event.key === 'Escape') {
       setReplying(false);
     }
   };
 
-  const secondsLeft = sendAt ? Math.max(0, Math.ceil((sendAt - Date.now()) / 1000)) : 0;
   const button = 'inline-flex h-6 items-center gap-1 rounded border border-border/70 px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50';
 
   return (
@@ -314,7 +304,7 @@ export function ConversationRow({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
-              disabled={sendAt !== null || busy === 'send' || drafting}
+              disabled={delayed.active || drafting}
               rows={Math.min(8, Math.max(2, draft.split('\n').length))}
               placeholder={aiMode
                 ? 'What should the reply say? (Enter to draft; empty lets Claude decide)'
@@ -322,15 +312,15 @@ export function ConversationRow({
               className="block w-full resize-none bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/70 disabled:opacity-60"
             />
             <div className="flex items-center gap-2 border-t border-border/50 px-2 py-1 text-[11px] text-muted-foreground">
-              {sendAt !== null ? (
+              {delayed.active && !delayed.sending ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Sending in {secondsLeft}s
-                  <button type="button" onClick={() => setSendAt(null)} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent">
+                  Sending in {delayed.secondsLeft}s · goes out even if you leave
+                  <button type="button" onClick={() => void delayed.cancel()} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent">
                     <Undo2 className="h-3 w-3" /> Cancel
                   </button>
                 </>
-              ) : busy === 'send' ? (
+              ) : delayed.active ? (
                 <><Loader2 className="h-3 w-3 animate-spin" /> Sending…</>
               ) : drafting ? (
                 <><Loader2 className="h-3 w-3 animate-spin" /> Claude is drafting your reply…</>
@@ -357,7 +347,7 @@ export function ConversationRow({
                   <button
                     type="button"
                     disabled={!draft.trim()}
-                    onClick={() => setSendAt(Date.now() + SEND_DELAY_MS)}
+                    onClick={send}
                     className="inline-flex items-center gap-1 rounded bg-primary px-2 py-0.5 font-medium text-primary-foreground disabled:opacity-50"
                   >
                     <Send className="h-3 w-3" /> Send

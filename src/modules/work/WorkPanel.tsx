@@ -26,6 +26,7 @@ import { SessionButton, jiraSeed, prSeed, todoSeed, type SessionActions } from '
 import WorkAssets from '@/modules/work/WorkAssets';
 import { SprintBadge, StatusBadge } from '@/modules/work/JiraBadges';
 import SlackSection from '@/modules/work/SlackSection';
+import PendingSends from '@/modules/work/PendingSends';
 import SlackCompose from '@/modules/work/SlackCompose';
 import { WORK_SEEN_EVENT } from '@/modules/work/useWorkBadge';
 import { WORK_LINKS_CHANGED_EVENT } from '@/modules/work/SessionWorkLinks';
@@ -787,6 +788,7 @@ export default function WorkPanel({ project, config, isVisible, onOpenSession, o
       count: items.slack.items.length,
       content: (
         <>
+        <PendingSends projectPath={projectPath} onSent={() => void load()} />
         <SlackCompose projectPath={projectPath} />
         <SlackSection
           projectPath={projectPath}

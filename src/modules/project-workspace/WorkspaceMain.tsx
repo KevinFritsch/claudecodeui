@@ -8,6 +8,7 @@ import { PluginTabContent } from '@/modules/plugins';
 import { BrowserUsePanel, useBrowserUseEnabled } from '@/modules/browser-use';
 import { usePaletteOpsRegister } from '@/modules/command-palette';
 import { TaskMasterPanel, useTaskMasterProjectSync, useTasksSettings } from '@/modules/task-master';
+import { SessionsOverview } from '@/modules/session-overview';
 import { SessionWorkLinks, WorkPanel, useWorkBadge, useWorkConfig } from '@/modules/work';
 import type { AppTab, DirectoryRevealRequest, Project, ProjectSession, ResolvedSplitPane, SessionEstablishedContext, SessionNavigationOptions, SettingsMainTab, SplitPaneTab } from '@/shared/types';
 import { useUiPreferences } from '@/shared/context/UiPreferencesContext';
@@ -356,6 +357,21 @@ function WorkspaceMain({
           />
 
           {shouldShowTasksTab && <TaskMasterPanel isVisible={activeTab === 'tasks'} />}
+
+          {activeTab === 'overview' && (
+            <div className="h-full overflow-hidden">
+              <SessionsOverview
+                key={selectedProject?.projectId ?? 'none'}
+                project={selectedProject}
+                isVisible={activeTab === 'overview'}
+                onOpenSession={(sessionId) => {
+                  setActiveTab('chat');
+                  onNavigateToSession(sessionId);
+                }}
+                onStartNewSession={() => handleNewSession(selectedProject)}
+              />
+            </div>
+          )}
 
           {workConfig && activeTab === 'work' && (
             <div className="h-full overflow-hidden">

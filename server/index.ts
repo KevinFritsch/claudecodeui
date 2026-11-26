@@ -50,6 +50,7 @@ import {
 } from './modules/scheduled-messages/index.js';
 import { closeSessionTopics, initializeSessionTopics } from './modules/session-topics/index.js';
 import { workRoutes } from './modules/work/index.js';
+import { sessionOverviewRoutes, warmSessionOverview } from './modules/session-overview/index.js';
 import { closeSessionWarmup, initializeSessionWarmup, sessionWarmupRoutes } from './modules/session-warmup/index.js';
 import browserUseRoutes from './modules/browser-use/browser-use.routes.js';
 import { assetsRoutes } from './modules/assets/index.js';
@@ -215,6 +216,8 @@ app.use('/api/scheduled-messages', authenticateToken, parseAuthenticatedBody, sc
 app.use('/api/session-warmup', authenticateToken, parseAuthenticatedBody, sessionWarmupRoutes);
 // Kvn: per-project Work dashboard (Jira, Bitbucket, to-dos)
 app.use('/api/work', authenticateToken, parseAuthenticatedBody, workRoutes);
+// Kvn: sessions overview (cards + search) per project
+app.use('/api/session-overview', authenticateToken, parseAuthenticatedBody, sessionOverviewRoutes);
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', parsePublicBody, agentRoutes);
@@ -422,6 +425,8 @@ async function startServer() {
             initializeSessionTopics();
             // Opens the 5-hour Claude session window early on the days the user chose.
             initializeSessionWarmup();
+            // Kvn: read recent transcripts in the background so the sessions overview opens fast.
+            setTimeout(() => { void warmSessionOverview().catch(() => undefined); }, 20_000).unref?.();
 
             // Start server-side plugin processes for enabled plugins
             startEnabledPluginServers().catch(err => {

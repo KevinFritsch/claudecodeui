@@ -9,6 +9,18 @@ export type WorkConfig = {
   todos: boolean;
 };
 
+/** A Slack send queued on the server (it waits a few seconds so it can be pulled back). */
+export type PendingSend = {
+  id: string;
+  projectPath: string;
+  label: string;
+  itemId: string | null;
+  sendAt: number;
+  state: 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
+  error: string | null;
+  note: string | null;
+};
+
 export type TodoStatus = 'open' | 'done' | 'cancelled';
 
 export type Todo = {
@@ -175,11 +187,16 @@ export const workApi = {
     request<{ text: string }>('/api/work/slack/ai-reply', { method: 'POST', body: { projectPath, id, threadTs, author, instruction, context } }),
   composePrepare: (projectPath: string, instruction: string) =>
     request<ComposePreview>('/api/work/slack/compose/prepare', { method: 'POST', body: { projectPath, instruction } }),
-  composeDeliver: (projectPath: string, payload: { mode: 'draft' | 'send'; target: ComposeTarget; threadTs: string | null; text: string }) =>
-    request<{ mode: string; via: string }>('/api/work/slack/compose/deliver', { method: 'POST', body: { projectPath, ...payload } }),
+  /** With `delayMs`, a send is queued on the server and goes out even if the view is left. */
+  composeDeliver: (projectPath: string, payload: { mode: 'draft' | 'send'; target: ComposeTarget; threadTs: string | null; text: string; delayMs?: number; label?: string }) =>
+    request<{ mode: string; via?: string; pending?: PendingSend }>('/api/work/slack/compose/deliver', { method: 'POST', body: { projectPath, ...payload } }),
   /** `threadTs` '' posts a plain message in the conversation (DM/group bursts). */
-  slackReply: (projectPath: string, id: string, threadTs: string, text: string, alsoIds: string[] = []) =>
-    request<{ id: string; ts: string }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text, alsoIds } }),
+  slackReply: (projectPath: string, id: string, threadTs: string, text: string, alsoIds: string[] = [], delay?: { delayMs: number; label: string }) =>
+    request<{ id: string; ts?: string; pending?: PendingSend }>('/api/work/slack/reply', { method: 'POST', body: { projectPath, id, threadTs, text, alsoIds, ...delay } }),
+  pendingSends: (projectPath: string) => request<{ sends: PendingSend[] }>(`/api/work/slack/pending?${q(projectPath)}`),
+  pendingSend: (id: string) => request<PendingSend>(`/api/work/slack/pending/${encodeURIComponent(id)}`),
+  cancelSend: (id: string) => request<PendingSend>(`/api/work/slack/pending/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: {} }),
+  dismissSend: (id: string) => request<{ dismissed: boolean }>(`/api/work/slack/pending/${encodeURIComponent(id)}/dismiss`, { method: 'POST', body: {} }),
   badge: (projectPath: string) => request<{ count: number }>(`/api/work/badge?${q(projectPath)}`),
   markSeen: (projectPath: string, keys: string[]) =>
     request<{ count: number }>('/api/work/seen', { method: 'POST', body: { projectPath, keys } }),

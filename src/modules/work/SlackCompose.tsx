@@ -1,10 +1,9 @@
 import { Check, Hash, Loader2, MessageCircle, NotebookPen, PenLine, Send, Sparkles, Undo2, X } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 
 import { cn } from '@/shared/utils';
 import { workApi, type ComposePreview, type ComposeTarget } from '@/modules/work/api';
-
-const SEND_DELAY_MS = 5_000;
+import { useDelayedSend } from '@/modules/work/useDelayedSend';
 
 type Stage =
   | { kind: 'idle' }
@@ -24,10 +23,9 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
   const [targetId, setTargetId] = useState<string>('');
   const [threadTs, setThreadTs] = useState<string>('');
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState<'draft' | 'send' | null>(null);
-  const [sendAt, setSendAt] = useState<number | null>(null);
+  const [busy, setBusy] = useState<'draft' | null>(null);
+  const delayed = useDelayedSend();
   const [error, setError] = useState<string | null>(null);
-  const [, tick] = useState(0);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const prepare = async () => {
@@ -58,16 +56,13 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
       ? (recipient.kind === 'dm' ? `DM to ${recipient.label.replace(/\s*\(@.*\)$/, '')}` : recipient.label)
       : null;
 
-  const deliver = async (mode: 'draft' | 'send') => {
+  const saveDraft = async () => {
     if (!recipient || !text.trim()) return;
-    setBusy(mode);
+    setBusy('draft');
     setError(null);
     try {
-      const { via } = await workApi.composeDeliver(projectPath, { mode, target: recipient, threadTs: thread?.ts ?? null, text });
-      const sent = via === 'connector'
-        ? `Sent: ${destinationLabel} (first DM with them, so Slack shows "Sent using Claude")`
-        : `Sent: ${destinationLabel}`;
-      setStage({ kind: 'done', message: mode === 'draft' ? `Draft saved in Slack (${destinationLabel})` : sent });
+      await workApi.composeDeliver(projectPath, { mode: 'draft', target: recipient, threadTs: thread?.ts ?? null, text });
+      setStage({ kind: 'done', message: `Draft saved in Slack (${destinationLabel})` });
       setInstruction('');
     } catch (e) {
       setError((e as Error).message);
@@ -76,25 +71,27 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
     }
   };
 
-  // Sending waits a few seconds so a wrong recipient can still be pulled back.
-  useEffect(() => {
-    if (sendAt === null) return undefined;
-    const timer = window.setInterval(() => {
-      tick((n) => n + 1);
-      if (Date.now() >= sendAt) {
-        window.clearInterval(timer);
-        setSendAt(null);
-        void deliver('send');
-      }
-    }, 250);
-    return () => window.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sendAt]);
+  // Sending waits a few seconds (on the server) so a wrong recipient can still be pulled back.
+  const send = () => {
+    if (!recipient || !text.trim() || delayed.active) return;
+    const label = destinationLabel ?? recipient.label;
+    setError(null);
+    void delayed.start(
+      async (delayMs) => (await workApi.composeDeliver(projectPath, { mode: 'send', target: recipient, threadTs: thread?.ts ?? null, text, delayMs, label })).pending,
+      {
+        onSent: (result) => {
+          setStage({ kind: 'done', message: result.note ? `Sent: ${label} (${result.note})` : `Sent: ${label}` });
+          setInstruction('');
+        },
+        onFailed: (message) => setError(message),
+      },
+    );
+  };
 
   const reset = () => {
     setStage({ kind: 'idle' });
     setError(null);
-    setSendAt(null);
+    if (delayed.active) void delayed.cancel();
   };
 
   const onInstructionKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -104,7 +101,6 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
     }
   };
 
-  const secondsLeft = sendAt ? Math.max(0, Math.ceil((sendAt - Date.now()) / 1000)) : 0;
 
   return (
     <section className="rounded-lg border border-border/70 bg-muted/20 p-2.5">
@@ -199,7 +195,7 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
             ref={textRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            disabled={busy !== null || sendAt !== null}
+            disabled={busy !== null || delayed.active}
             rows={Math.min(8, Math.max(3, text.split('\n').length + 1))}
             className="block w-full resize-none rounded-md border border-border/70 bg-background px-2.5 py-2 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30 disabled:opacity-60"
           />
@@ -207,10 +203,11 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
           {error && <p className="text-xs text-destructive">{error}</p>}
 
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            {sendAt !== null ? (
+            {delayed.active ? (
               <>
-                <Loader2 className="h-3 w-3 animate-spin" /> Sending to {destinationLabel} in {secondsLeft}s
-                <button type="button" onClick={() => setSendAt(null)} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {delayed.sending ? `Sending to ${destinationLabel}…` : `Sending to ${destinationLabel} in ${delayed.secondsLeft}s · goes out even if you leave`}
+                <button type="button" onClick={() => void delayed.cancel()} hidden={delayed.sending} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent">
                   <Undo2 className="h-3 w-3" /> Cancel
                 </button>
               </>
@@ -219,7 +216,7 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
                 <span className="min-w-0 flex-1 truncate">{destinationLabel ? `→ ${destinationLabel}` : 'Pick a recipient'}</span>
                 <button
                   type="button"
-                  onClick={() => void deliver('draft')}
+                  onClick={() => void saveDraft()}
                   disabled={!recipient || !text.trim() || busy !== null}
                   title="Save it as a draft in Slack, to send from there"
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
@@ -228,11 +225,11 @@ export default function SlackCompose({ projectPath }: { projectPath: string }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSendAt(Date.now() + SEND_DELAY_MS)}
+                  onClick={send}
                   disabled={!recipient || !text.trim() || busy !== null}
                   className={cn('inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground disabled:opacity-50')}
                 >
-                  {busy === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
+                  <Send className="h-3.5 w-3.5" /> Send
                 </button>
               </>
             )}

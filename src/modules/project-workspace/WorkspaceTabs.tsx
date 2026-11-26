@@ -1,4 +1,4 @@
-import { MessagesSquare, ClipboardCheck, ListTodo, MonitorPlay, type LucideIcon } from 'lucide-react';
+import { MessagesSquare, ClipboardCheck, LayoutGrid, ListTodo, MonitorPlay, type LucideIcon } from 'lucide-react';
 import { Fragment } from 'react';
 import type { Dispatch, KeyboardEvent, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -43,6 +43,13 @@ type TabDefinition = BuiltInTab | PluginTab;
 // tab strip), so the header only carries project-level views.
 const SESSIONS_TAB_LABEL = 'Sessions';
 
+const OVERVIEW_TAB: BuiltInTab = {
+  kind: 'builtin',
+  id: 'overview',
+  labelKey: 'Overview',
+  icon: LayoutGrid,
+};
+
 const WORK_TAB: BuiltInTab = {
   kind: 'builtin',
   id: 'work',
@@ -80,6 +87,7 @@ export default function WorkspaceTabs({
   const sessionsTabDef: BuiltInTab = { kind: 'builtin', id: sessionsTab, labelKey: SESSIONS_TAB_LABEL, icon: MessagesSquare };
   const builtInTabs: BuiltInTab[] = [
     sessionsTabDef,
+    OVERVIEW_TAB,
     ...(shouldShowWorkTab ? [WORK_TAB] : []),
     ...(shouldShowBrowserTab ? [BROWSER_TAB] : []),
     ...(shouldShowTasksTab ? [TASKS_TAB] : []),

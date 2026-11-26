@@ -19,6 +19,7 @@ import { seenService } from './services/seen.service.js';
 import type { RemoteSnapshot } from './services/snapshot.service.js';
 import { draftSlackReply } from './services/ai-reply.service.js';
 import { deliverMessage, prepareMessage, type ComposeTarget } from './services/slack-compose.service.js';
+import { cancelSend, dismissSend, getSend, listSends, scheduleSend } from './services/pending-sends.service.js';
 import { OPEN_REACTIONS, forgetAnswered, isReactionName, listCustomEmoji, markAnsweredLocally, markDone, postReply, readThread, unmarkDone, type SlackMention } from './services/slack.service.js';
 import { getSnapshot, markStale, patchSnapshot, warmAllProjects } from './services/snapshot.service.js';
 import { todosService, type TodoStatus } from './services/todos.service.js';
@@ -291,6 +292,10 @@ function readSlackId(body: Record<string, unknown>): { projectPath: string; id: 
   return { projectPath, id };
 }
 
+function readDelay(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(15_000, value)) : 0;
+}
+
 async function slackAction<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
@@ -401,7 +406,17 @@ router.post('/slack/compose/deliver', asyncHandler(async (req: Request, res: Res
   if (!mode || !text || !target || (target.kind !== 'dm' && target.kind !== 'channel') || !/^[A-Z0-9]+$/.test(String(target.id))) {
     throw new AppError('mode, target and text are required.', { code: 'INVALID_REQUEST', statusCode: 400 });
   }
-  const result = await slackAction(() => deliverMessage(readSecrets(), { mode, target, threadTs, text: text.slice(0, 4000) }));
+  const run = async () => {
+    const result = await deliverMessage(readSecrets(), { mode, target, threadTs, text: text.slice(0, 4000) });
+    return { ...result, note: result.via === 'connector' ? 'first DM with them, so Slack shows "Sent using Claude"' : null };
+  };
+  const delayMs = readDelay(body.delayMs);
+  if (mode === 'send' && delayMs > 0) {
+    const label = typeof body.label === 'string' && body.label ? body.label : String((target as { label?: unknown }).label ?? 'Slack message');
+    res.json(createApiSuccessResponse({ mode, pending: scheduleSend({ projectPath, label, delayMs }, run) }));
+    return;
+  }
+  const result = await slackAction(run);
   res.json(createApiSuccessResponse({ mode, ...result }));
 }));
 
@@ -412,14 +427,47 @@ router.post('/slack/reply', asyncHandler(async (req: Request, res: Response) => 
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   const threadTs = typeof body.threadTs === 'string' ? body.threadTs : '';
   if (!text) throw new AppError('text is required.', { code: 'INVALID_REQUEST', statusCode: 400 });
-  const result = await slackAction(() => postReply(readSecrets(), id, threadTs, text.slice(0, 4000)));
   const alsoIds = readIdList(body.alsoIds);
-  markAnsweredLocally(alsoIds);
-  const closing = new Set([id, ...alsoIds]);
-  patchSnapshot(projectPath, (snap) => {
-    if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => !closing.has(m.id));
-  });
+  const run = async () => {
+    const result = await postReply(readSecrets(), id, threadTs, text.slice(0, 4000));
+    markAnsweredLocally(alsoIds);
+    const closing = new Set([id, ...alsoIds]);
+    patchSnapshot(projectPath, (snap) => {
+      if (snap.slack) snap.slack.items = snap.slack.items.filter((m) => !closing.has(m.id));
+    });
+    return result;
+  };
+  const delayMs = readDelay(body.delayMs);
+  if (delayMs > 0) {
+    const label = typeof body.label === 'string' && body.label ? body.label : 'Slack reply';
+    res.json(createApiSuccessResponse({ id, pending: scheduleSend({ projectPath, label, itemId: id, delayMs }, run) }));
+    return;
+  }
+  const result = await slackAction(run);
   res.json(createApiSuccessResponse({ id, ...result }));
+}));
+
+/** Sends waiting to go out (or that failed) for the project, so the UI can show them after a reload. */
+router.get('/slack/pending', asyncHandler(async (req: Request, res: Response) => {
+  const projectPath = readProjectPath(req.query.projectPath);
+  res.json(createApiSuccessResponse({ sends: listSends(projectPath) }));
+}));
+
+router.get('/slack/pending/:id', asyncHandler(async (req: Request, res: Response) => {
+  const send = getSend(String(req.params.id));
+  if (!send) throw new AppError('Unknown send.', { code: 'NOT_FOUND', statusCode: 404 });
+  res.json(createApiSuccessResponse(send));
+}));
+
+/** Pulls back a send that has not gone out yet (answers with its state: 'cancelled', or 'sent' if too late). */
+router.post('/slack/pending/:id/cancel', asyncHandler(async (req: Request, res: Response) => {
+  const send = cancelSend(String(req.params.id));
+  if (!send) throw new AppError('Unknown send.', { code: 'NOT_FOUND', statusCode: 404 });
+  res.json(createApiSuccessResponse(send));
+}));
+
+router.post('/slack/pending/:id/dismiss', asyncHandler(async (req: Request, res: Response) => {
+  res.json(createApiSuccessResponse({ dismissed: dismissSend(String(req.params.id)) }));
 }));
 
 /** Moves a Jira issue to another status by name; answers with the status it came from so the UI can undo. */
